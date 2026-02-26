@@ -2,6 +2,7 @@ package oddrip
 
 import (
 	"context"
+	"errors"
 	"net/url"
 
 	"github.com/oddrip/client/oddrip/types"
@@ -83,12 +84,13 @@ func (s *OrdersService) GetQueuePosition(ctx context.Context, orderID string) (*
 }
 
 func (s *OrdersService) GetQueuePositions(ctx context.Context, opts *types.GetOrderQueuePositionsOpts) (*types.GetOrderQueuePositionsResponse, error) {
-	v := url.Values{}
-	if opts != nil {
-		encodeQuery(v, "market_tickers", opts.MarketTickers)
-		encodeQuery(v, "event_ticker", opts.EventTicker)
-		encodeQueryInt(v, "subaccount", opts.Subaccount)
+	if opts == nil || (opts.MarketTickers == "" && opts.EventTicker == "") {
+		return nil, errors.New("market_tickers or event_ticker required")
 	}
+	v := url.Values{}
+	encodeQuery(v, "market_tickers", opts.MarketTickers)
+	encodeQuery(v, "event_ticker", opts.EventTicker)
+	encodeQueryInt(v, "subaccount", opts.Subaccount)
 	var out types.GetOrderQueuePositionsResponse
 	if err := s.client.get(ctx, joinPath("portfolio", "orders", "queue_positions"), v, &out); err != nil {
 		return nil, err

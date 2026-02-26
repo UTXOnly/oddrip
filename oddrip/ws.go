@@ -309,8 +309,8 @@ func (ws *WSConn) Messages() <-chan *types.WSMessage {
 
 func (ws *WSConn) Close() error {
 	ws.mu.Lock()
-	defer ws.mu.Unlock()
 	if ws.closed {
+		ws.mu.Unlock()
 		return nil
 	}
 	ws.closed = true
@@ -318,8 +318,13 @@ func (ws *WSConn) Close() error {
 	if e := ws.conn.Close(); e != nil && err == nil {
 		err = e
 	}
-	<-ws.readDone
-	return err
+	ws.mu.Unlock()
+	select {
+	case <-ws.readDone:
+		return err
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("close: read loop did not exit: %w", err)
+	}
 }
 
 type WSError struct {

@@ -94,7 +94,7 @@ results, err := oddrip.DoConcurrent(ctx, 3, func(i int) (*types.GetMarketRespons
 
 ## WebSocket (market data)
 
-The client supports the [Kalshi Market Data WebSocket API](https://docs.kalshi.com/getting_started/quick_start_websockets). Authentication is required (same API key + RSA-PSS as REST).
+The client supports the [Kalshi Market Data WebSocket API](https://docs.kalshi.com/getting_started/quick_start_websockets). The WebSocket API is **read-only**: subscribe to channels (ticker, orderbook, trades, fills, etc.) and manage subscriptions; there is no order placement. Place and cancel orders via the REST client.
 
 ```go
 // Connect (uses same auth as client)
