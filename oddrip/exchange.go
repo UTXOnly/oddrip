@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/url"
 
-	"github.com/oddrip/client/oddrip/types"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 type ExchangeService struct {

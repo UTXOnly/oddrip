@@ -4,7 +4,7 @@ import (
 	"crypto/rsa"
 	"net/http"
 
-	"github.com/oddrip/client/oddrip/internal/auth"
+	"github.com/UTXOnly/oddrip/oddrip/internal/auth"
 )
 
 type AuthProvider interface {

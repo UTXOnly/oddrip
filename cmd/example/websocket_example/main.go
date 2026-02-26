@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oddrip/client/oddrip"
-	"github.com/oddrip/client/oddrip/types"
+	"github.com/UTXOnly/oddrip/oddrip"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 const logFilename = "ws_calls.log"

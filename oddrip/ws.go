@@ -13,7 +13,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/oddrip/client/oddrip/types"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 const defaultWSHost = "api.elections.kalshi.com"

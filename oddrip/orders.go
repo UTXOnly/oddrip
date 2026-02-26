@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net/url"
 
-	"github.com/oddrip/client/oddrip/types"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 type OrdersService struct {

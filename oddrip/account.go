@@ -3,7 +3,7 @@ package oddrip
 import (
 	"context"
 
-	"github.com/oddrip/client/oddrip/types"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 type AccountService struct {

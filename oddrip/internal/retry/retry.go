@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/oddrip/client/oddrip/internal/errors"
+	"github.com/UTXOnly/oddrip/oddrip/internal/errors"
 )
 
 type Config struct {

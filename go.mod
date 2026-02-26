@@ -1,4 +1,4 @@
-module github.com/oddrip/client
+module github.com/UTXOnly/oddrip
 
 go 1.24
 

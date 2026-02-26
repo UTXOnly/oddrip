@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/oddrip/client/oddrip/internal/errors"
-	"github.com/oddrip/client/oddrip/internal/retry"
-	"github.com/oddrip/client/oddrip/types"
+	"github.com/UTXOnly/oddrip/oddrip/internal/errors"
+	"github.com/UTXOnly/oddrip/oddrip/internal/retry"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 const defaultBaseURL = "https://api.elections.kalshi.com/trade-api/v2"
