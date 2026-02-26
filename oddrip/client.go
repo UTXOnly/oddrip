@@ -37,6 +37,7 @@ type Client struct {
 	Orders    *OrdersService
 	Portfolio *PortfolioService
 	Account   *AccountService
+	Events    *EventsService
 }
 
 type Option func(*Client)
@@ -91,6 +92,7 @@ func New(opts ...Option) *Client {
 	c.Orders = &OrdersService{client: c}
 	c.Portfolio = &PortfolioService{client: c}
 	c.Account = &AccountService{client: c}
+	c.Events = &EventsService{client: c}
 	return c
 }
 
@@ -188,6 +190,12 @@ func encodeQueryInt64(v url.Values, key string, p *int64) {
 func encodeQueryInt(v url.Values, key string, p *int) {
 	if p != nil {
 		v.Set(key, fmt.Sprintf("%d", *p))
+	}
+}
+
+func encodeQueryBool(v url.Values, key string, p *bool) {
+	if p != nil {
+		v.Set(key, fmt.Sprintf("%t", *p))
 	}
 }
 

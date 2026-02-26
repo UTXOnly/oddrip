@@ -158,6 +158,24 @@ func runAll(ctx context.Context, client *oddrip.Client, log io.Writer) {
 		logCall("Markets.GetTrades (limit=3, ticker="+ticker+")", func() { client.Markets.GetTrades(ctx, &types.GetTradesOpts{Limit: &limit3, Ticker: ticker}) })
 	}
 
+	logCall("Events.List (limit=5)", func() { client.Events.List(ctx, &types.GetEventsOpts{Limit: &limit5}) })
+	logCall("Events.List (limit=3, status=open)", func() { client.Events.List(ctx, &types.GetEventsOpts{Limit: &limit3, Status: "open"}) })
+	logCall("Events.List (limit=3, series_ticker=KXBTC)", func() { client.Events.List(ctx, &types.GetEventsOpts{Limit: &limit3, SeriesTicker: "KXBTC"}) })
+	nestedTrue := true
+	logCall("Events.List (limit=3, with_nested_markets=true)", func() { client.Events.List(ctx, &types.GetEventsOpts{Limit: &limit3, WithNestedMarkets: &nestedTrue}) })
+	var eventsResp *types.GetEventsResponse
+	logCall("Events.List (limit=5, for follow-up)", func() {
+		eventsResp, _ = client.Events.List(ctx, &types.GetEventsOpts{Limit: &limit5})
+	})
+	if eventsResp != nil && len(eventsResp.Events) > 0 {
+		eventTicker := eventsResp.Events[0].EventTicker
+		logCall("Events.Get "+eventTicker, func() { client.Events.Get(ctx, eventTicker, nil) })
+		logCall("Events.Get "+eventTicker+" (with_nested_markets=true)", func() { client.Events.Get(ctx, eventTicker, &types.GetEventOpts{WithNestedMarkets: &nestedTrue}) })
+		logCall("Events.GetMetadata "+eventTicker, func() { client.Events.GetMetadata(ctx, eventTicker) })
+	}
+	logCall("Events.ListMultivariate (limit=3)", func() { client.Events.ListMultivariate(ctx, &types.GetMultivariateEventsOpts{Limit: &limit3}) })
+	logCall("Events.ListMultivariate (limit=3, with_nested_markets=true)", func() { client.Events.ListMultivariate(ctx, &types.GetMultivariateEventsOpts{Limit: &limit3, WithNestedMarkets: &nestedTrue}) })
+
 	logCall("Orders.List (no opts)", func() { client.Orders.List(ctx, nil) })
 	logCall("Orders.List (limit=5)", func() { client.Orders.List(ctx, &types.GetOrdersOpts{Limit: &limit5}) })
 	logCall("Orders.List (status=resting, limit=5)", func() { client.Orders.List(ctx, &types.GetOrdersOpts{Status: types.OrderStatusResting, Limit: &limit5}) })

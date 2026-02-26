@@ -1,6 +1,8 @@
 # Oddrip
 
-Go client for the [Kalshi Trade API](https://docs.kalshi.com/openapi.yaml): REST for orders, portfolio, markets, and exchange info, plus WebSocket for real-time market data (ticker, orderbook, trades, fills, and related channels). One library, same auth; use REST to trade and WebSocket to stream.
+Go client for the [Kalshi Trade API](https://docs.kalshi.com/openapi.yaml): REST for orders, portfolio, markets, events, and exchange info, plus WebSocket for real-time market data (ticker, orderbook, trades, fills, and related channels). One library, same auth; use REST to trade and WebSocket to stream.
+
+REST coverage: **Exchange** (status, announcements, schedule, user_data_timestamp, historical cutoff, series fee changes), **Markets** (list, get, orderbook, trades), **Events** (list, list multivariate, get, get metadata per [Get Events](https://docs.kalshi.com/api-reference/events/get-events)), **Orders** (create, list, get, cancel, amend, decrease, queue positions, batch), **Portfolio** (balance, fills, positions), **Account** (API limits). The OpenAPI spec also defines historical, series, order groups, communications, milestones, and other endpoints; those can be added as needed.
 
 Module path: `github.com/UTXOnly/oddrip`. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`.
 
@@ -46,6 +48,7 @@ ctx := context.Background()
 
 status, err := client.Exchange.GetStatus(ctx)
 market, err := client.Markets.Get(ctx, "TICKER-24JAN01")
+events, err := client.Events.List(ctx, &types.GetEventsOpts{Status: "open"})
 orders, err := client.Orders.List(ctx, &types.GetOrdersOpts{Status: "resting"})
 balance, err := client.Portfolio.GetBalance(ctx, nil)
 ```
@@ -153,7 +156,7 @@ for msg := range conn.Messages() {
 
 ## Package layout
 
-- **`oddrip`** – REST client, `ConnectWS`, and service methods (`Markets`, `Orders`, `Exchange`, `Portfolio`, `Account`).
+- **`oddrip`** – REST client, `ConnectWS`, and service methods (`Exchange`, `Markets`, `Events`, `Orders`, `Portfolio`, `Account`).
 - **`oddrip/types`** – Request/response and enum types for both REST and WebSocket (e.g. `CreateOrderRequest`, `SubscribeParams`, `WSMessage`, channel constants).
 - **`oddrip/internal/errors`** – Parsing of API error responses.
 - **`oddrip/internal/retry`** – Retry with backoff.

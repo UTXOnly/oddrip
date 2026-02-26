@@ -2,7 +2,7 @@
 
 Runs WebSocket client methods that **do not place orders** (subscribe, list, update subscription, unsubscribe, receive messages). All output is written to **`ws_calls.log`** in the current directory; nothing is printed to stdout.
 
-**Note:** The demo API (`demo-api.kalshi.co`) is not fully functional; many endpoints may return errors or empty data. That is expected. Set `BASE_URL` to production for a more complete run.
+**Note:** The demo API (`demo-api.kalshi.co`) is not fully functional; many endpoints may return errors or empty data. That is expected. If you get `websocket: bad handshake` on demo, try production: `BASE_URL=https://api.elections.kalshi.com/trade-api/v2` (use production credentials).
 
 Each log entry includes:
 - A short description of the call (e.g. `Subscribe (ticker, single market)`, `ListSubscriptions`)

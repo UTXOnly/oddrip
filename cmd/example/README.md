@@ -9,7 +9,7 @@ Each log entry includes:
 - The HTTP method and **fully constructed URL** (base URL + path + query)
 - Response status code and **raw response body** (pretty-printed JSON)
 
-Endpoints covered: exchange (status, announcements, schedule, user_data_timestamp, historical cutoff, series fee changes), markets (list, get, orderbook, trades), orders (list, get, queue position(s)), portfolio (balance, fills, positions), account (API limits).
+Endpoints covered: exchange (status, announcements, schedule, user_data_timestamp, historical cutoff, series fee changes), markets (list, get, orderbook, trades), events (list, list multivariate, get, get metadata), orders (list, get, queue position(s)), portfolio (balance, fills, positions), account (API limits).
 
 ## Keys from files in this directory
 
