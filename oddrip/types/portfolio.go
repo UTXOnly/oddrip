@@ -19,16 +19,19 @@ type Fill struct {
 	MarketTicker     string  `json:"market_ticker"`
 	Side             string  `json:"side"`
 	Action           string  `json:"action"`
-	Count            int     `json:"count"`
+	Count            int     `json:"count,omitempty"`
 	CountFp          string  `json:"count_fp"`
-	Price            float64 `json:"price"`
-	YesPrice         int     `json:"yes_price"`
-	NoPrice          int     `json:"no_price"`
+	Price            float64 `json:"price,omitempty"`
+	YesPrice         int     `json:"yes_price,omitempty"`
+	NoPrice          int     `json:"no_price,omitempty"`
+	YesPriceDollars  string  `json:"yes_price_dollars"`
+	NoPriceDollars   string  `json:"no_price_dollars"`
 	YesPriceFixed    string  `json:"yes_price_fixed"`
 	NoPriceFixed     string  `json:"no_price_fixed"`
 	IsTaker          bool    `json:"is_taker"`
 	CreatedTime      string  `json:"created_time,omitempty"`
 	FeeCost          string  `json:"fee_cost"`
+	Ts               *int64  `json:"ts,omitempty"`
 	SubaccountNumber *int    `json:"subaccount_number,omitempty"`
 }
 
@@ -60,7 +63,7 @@ type MarketPosition struct {
 	RestingOrdersCount    int    `json:"resting_orders_count"`
 	FeesPaid              int    `json:"fees_paid"`
 	FeesPaidDollars       string `json:"fees_paid_dollars"`
-	LastUpdatedTs         string `json:"last_updated_ts,omitempty"`
+	LastUpdatedTs         string `json:"last_updated_ts"`
 }
 
 type EventPosition struct {
@@ -73,7 +76,7 @@ type EventPosition struct {
 	EventExposureDollars string `json:"event_exposure_dollars"`
 	RealizedPnl          int    `json:"realized_pnl"`
 	RealizedPnlDollars   string `json:"realized_pnl_dollars"`
-	RestingOrdersCount   int    `json:"resting_orders_count"`
+	RestingOrdersCount   int    `json:"resting_orders_count,omitempty"`
 	FeesPaid             int    `json:"fees_paid"`
 	FeesPaidDollars      string `json:"fees_paid_dollars"`
 }
@@ -97,4 +100,35 @@ type GetAccountApiLimitsResponse struct {
 	UsageTier  string `json:"usage_tier"`
 	ReadLimit  int    `json:"read_limit"`
 	WriteLimit int    `json:"write_limit"`
+}
+
+type Settlement struct {
+	Ticker              string `json:"ticker"`
+	EventTicker         string `json:"event_ticker"`
+	MarketResult        string `json:"market_result"`
+	YesCountFp          string `json:"yes_count_fp"`
+	YesTotalCost        int    `json:"yes_total_cost,omitempty"`
+	YesTotalCostDollars string `json:"yes_total_cost_dollars"`
+	NoCountFp           string `json:"no_count_fp"`
+	NoTotalCost         int    `json:"no_total_cost,omitempty"`
+	NoTotalCostDollars  string `json:"no_total_cost_dollars"`
+	Revenue             int    `json:"revenue"`
+	SettledTime         string `json:"settled_time"`
+	FeeCost             string `json:"fee_cost"`
+	Value               *int   `json:"value,omitempty"`
+}
+
+type GetSettlementsResponse struct {
+	Settlements []Settlement `json:"settlements"`
+	Cursor      string       `json:"cursor,omitempty"`
+}
+
+type GetSettlementsOpts struct {
+	Limit        *int64
+	Cursor       string
+	Ticker       string
+	EventTicker  string
+	MinTs        *int64
+	MaxTs        *int64
+	Subaccount   *int
 }

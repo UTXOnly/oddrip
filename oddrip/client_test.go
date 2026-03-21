@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/http"
 	"testing"
+
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 type mockTransport struct {
@@ -83,5 +85,101 @@ func TestExchange_GetStatus_APIError(t *testing.T) {
 	}
 	if apiErr.StatusCode != 404 || apiErr.Message != "resource not found" {
 		t.Errorf("APIError: status=%d message=%s", apiErr.StatusCode, apiErr.Message)
+	}
+}
+
+func TestMarkets_ListHistorical_RequestPath(t *testing.T) {
+	body := []byte(`{"markets":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Markets.ListHistorical(ctx, &types.GetHistoricalMarketsOpts{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/historical/markets" {
+		t.Fatalf("path: %v", mt.req)
+	}
+}
+
+func TestMarkets_GetHistoricalTrades_RequestPath(t *testing.T) {
+	body := []byte(`{"trades":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Markets.GetHistoricalTrades(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/historical/trades" {
+		t.Fatalf("path: %v", mt.req)
+	}
+}
+
+func TestMarkets_GetHistoricalCandlesticks_QueryAndPath(t *testing.T) {
+	body := []byte(`{"ticker":"X","candlesticks":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Markets.GetHistoricalCandlesticks(ctx, "X", &types.GetHistoricalMarketCandlesticksOpts{
+		StartTs:        1,
+		EndTs:          2,
+		PeriodInterval: 60,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/historical/markets/X/candlesticks" {
+		t.Fatalf("path: %v", mt.req)
+	}
+	q := mt.req.URL.Query()
+	if q.Get("start_ts") != "1" || q.Get("end_ts") != "2" || q.Get("period_interval") != "60" {
+		t.Fatalf("query: %v", q)
+	}
+}
+
+func TestMarkets_GetHistoricalCandlesticks_InvalidPeriod(t *testing.T) {
+	client := New()
+	ctx := context.Background()
+	_, err := client.Markets.GetHistoricalCandlesticks(ctx, "X", &types.GetHistoricalMarketCandlesticksOpts{
+		StartTs:        1,
+		EndTs:          2,
+		PeriodInterval: 99,
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestPortfolio_ListSettlements_RequestPath(t *testing.T) {
+	body := []byte(`{"settlements":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Portfolio.ListSettlements(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/portfolio/settlements" {
+		t.Fatalf("path: %v", mt.req)
+	}
+}
+
+func TestPortfolio_ListHistoricalFills_RequestPath(t *testing.T) {
+	body := []byte(`{"fills":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Portfolio.ListHistoricalFills(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/historical/fills" {
+		t.Fatalf("path: %v", mt.req)
 	}
 }

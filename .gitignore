@@ -1,0 +1,17 @@
+.cursorrules
+
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+/bin/
+
+# Test binary
+*.test
+
+# Output of go coverage
+*.out
+
+.DS_Store
