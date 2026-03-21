@@ -21,6 +21,8 @@ type Order struct {
 	InitialCountFp       string  `json:"initial_count_fp"`
 	TakerFees            int     `json:"taker_fees"`
 	MakerFees            int     `json:"maker_fees"`
+	TakerFeesDollars     string  `json:"taker_fees_dollars"`
+	MakerFeesDollars     string  `json:"maker_fees_dollars"`
 	TakerFillCost        int     `json:"taker_fill_cost"`
 	MakerFillCost        int     `json:"maker_fill_cost"`
 	TakerFillCostDollars  string `json:"taker_fill_cost_dollars"`
@@ -117,15 +119,15 @@ type DecreaseOrderResponse struct {
 }
 
 type OrderQueuePosition struct {
-	OrderID        string `json:"order_id"`
-	MarketTicker   string `json:"market_ticker"`
-	QueuePosition  int    `json:"queue_position"`
-	QueuePositionFp string `json:"queue_position_fp,omitempty"`
+	OrderID         string `json:"order_id"`
+	MarketTicker    string `json:"market_ticker"`
+	QueuePosition   int    `json:"queue_position,omitempty"`
+	QueuePositionFp string `json:"queue_position_fp"`
 }
 
 type GetOrderQueuePositionResponse struct {
-	QueuePosition   int    `json:"queue_position"`
-	QueuePositionFp string `json:"queue_position_fp,omitempty"`
+	QueuePosition   int    `json:"queue_position,omitempty"`
+	QueuePositionFp string `json:"queue_position_fp"`
 }
 
 type GetOrderQueuePositionsResponse struct {

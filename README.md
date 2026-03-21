@@ -2,16 +2,17 @@
 
 Go client for the [Kalshi Trade API](https://docs.kalshi.com/openapi.yaml): REST for orders, portfolio, markets, events, and exchange info, plus WebSocket for real-time market data (ticker, orderbook, trades, fills, and related channels). One library, same auth; use REST to trade and WebSocket to stream.
 
-REST coverage: **Exchange** (status, announcements, schedule, user_data_timestamp, historical cutoff, series fee changes), **Markets** (list, get, orderbook, trades), **Events** (list, list multivariate, get, get metadata per [Get Events](https://docs.kalshi.com/api-reference/events/get-events)), **Orders** (create, list, get, cancel, amend, decrease, queue positions, batch), **Portfolio** (balance, fills, positions), **Account** (API limits). The OpenAPI spec also defines historical, series, order groups, communications, milestones, and other endpoints; those can be added as needed.
+REST coverage: **Exchange** (status, announcements, schedule, user_data_timestamp, historical cutoff, series fee changes), **Markets** (list, get, orderbook, trades, **historical** list/get/trades/candlesticks), **Events** (list, list multivariate, get, get metadata per [Get Events](https://docs.kalshi.com/api-reference/events/get-events)), **Orders** (create, list, get, cancel, amend, decrease, queue positions, batch), **Portfolio** (balance, fills, positions, **settlements**, **historical** fills and orders), **Account** (API limits). The OpenAPI spec also defines order groups, communications, milestones, and other endpoints; those can be added as needed. See `CHANGELOG.md` and [Kalshi changelog](https://docs.kalshi.com/changelog) for API-facing changes.
 
-Module path: `github.com/UTXOnly/oddrip`. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`.
+Module path: `github.com/UTXOnly/oddrip`. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. Release **v0.2.0** — pin with `go get github.com/UTXOnly/oddrip/oddrip@v0.2.0` after tagging; runtime string `oddrip.Version` matches the module release.
 
 ---
 
 ## Install
 
 ```bash
-go get github.com/UTXOnly/oddrip/oddrip
+go get github.com/UTXOnly/oddrip/oddrip@latest
+# or pin: go get github.com/UTXOnly/oddrip/oddrip@v0.2.0
 ```
 
 ---

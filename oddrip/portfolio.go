@@ -60,3 +60,51 @@ func (s *PortfolioService) GetPositions(ctx context.Context, opts *types.GetPosi
 	}
 	return &out, nil
 }
+
+func (s *PortfolioService) ListSettlements(ctx context.Context, opts *types.GetSettlementsOpts) (*types.GetSettlementsResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+		encodeQuery(v, "ticker", opts.Ticker)
+		encodeQuery(v, "event_ticker", opts.EventTicker)
+		encodeQueryInt64(v, "min_ts", opts.MinTs)
+		encodeQueryInt64(v, "max_ts", opts.MaxTs)
+		encodeQueryInt(v, "subaccount", opts.Subaccount)
+	}
+	var out types.GetSettlementsResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "settlements"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *PortfolioService) ListHistoricalFills(ctx context.Context, opts *types.GetHistoricalArchiveOpts) (*types.GetFillsResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQuery(v, "ticker", opts.Ticker)
+		encodeQueryInt64(v, "max_ts", opts.MaxTs)
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetFillsResponse
+	if err := s.client.get(ctx, joinPath("historical", "fills"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *PortfolioService) ListHistoricalOrders(ctx context.Context, opts *types.GetHistoricalArchiveOpts) (*types.GetOrdersResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQuery(v, "ticker", opts.Ticker)
+		encodeQueryInt64(v, "max_ts", opts.MaxTs)
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetOrdersResponse
+	if err := s.client.get(ctx, joinPath("historical", "orders"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
