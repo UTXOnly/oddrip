@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The client tracks [Kals
 
 ## [Unreleased]
 
+## [0.3.0] — 2026-05-23
+
+### Added
+
+- Vendored Kalshi OpenAPI **3.19.0** and AsyncAPI **2.0.0** (published at docs.kalshi.com).
+- **Orders (V2):** `CreateV2`, `CancelV2`, `AmendV2`, `DecreaseV2`, `BatchCreateV2`, and `BatchCancelV2` for `/portfolio/events/orders*`.
+- **Markets:** `GetOrderbooks` for `GET /markets/orderbooks`.
+- **Portfolio:** `ListDeposits` and `ListWithdrawals` for deposit/withdrawal history.
+- **Account:** `GetEndpointCosts` for `GET /account/endpoint_costs`.
+- **Types:** V2 order request/response structs; `BucketLimit` rate-limit buckets; `balance_dollars`; `outcome_side` / `book_side` on orders and fills; `taker_outcome_side` / `taker_book_side` on trades; `occurrence_datetime` on markets; deposit/withdrawal types; `WSChannelMultivariateLifecycle` and `WSUpdateSubscriptionGetSnapshot`.
+- **`oddrip.Version`** constant (`0.3.0`) for the client module; use git tag **`v0.3.0`** when publishing.
+
+### Changed
+
+- **Types:** `GetAccountApiLimitsResponse` now uses nested `read` / `write` `BucketLimit` objects (replacing flat `read_limit` / `write_limit`) per Apr 2026 rate-limit API.
+- **Types:** `GetHistoricalMarketsOpts` adds `series_ticker` filter.
+
 ## [0.2.0] — 2026-03-21
 
 ### Added

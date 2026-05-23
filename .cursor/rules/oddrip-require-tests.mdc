@@ -1,0 +1,31 @@
+---
+description: Require tests for every oddrip API/type change before finishing
+alwaysApply: true
+---
+
+# Oddrip: tests are mandatory
+
+When you add or change **any** of the following, you **must** add or update tests in the same change — do not mark the task done without them:
+
+- Public methods on `*Service` in `oddrip/*.go` (REST)
+- Types with `json` tags in `oddrip/types/*.go`
+- WebSocket commands, channels, or message shapes in `oddrip/ws.go` / `oddrip/types/ws.go`
+
+## Required coverage per change
+
+| Change | Test file | Assert |
+|--------|-----------|--------|
+| New/changed REST method | `oddrip/*_test.go` | HTTP path, method, query params, request body when non-trivial |
+| New/changed response/request struct | `oddrip/types/*_test.go` | JSON unmarshal (and marshal if you construct requests) |
+| New WS channel or `update_subscription` action | `oddrip/types/ws_test.go` or `oddrip/ws_test.go` | Constant value and/or JSON round-trip |
+
+Use the existing `mockTransport` pattern in `oddrip/client_test.go`.
+
+## Finish checklist
+
+1. Every new public API method has at least one test.
+2. Every new/changed exported struct field used in API I/O has a JSON test.
+3. Run `go build ./...` and `go test ./...` from repo root — both must pass.
+4. Mention new tests in `CHANGELOG.md` when documenting API work.
+
+If you cannot test something (e.g. live WS server behavior), add the closest unit test possible and note the gap — do not skip tests silently.

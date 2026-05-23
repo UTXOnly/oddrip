@@ -183,3 +183,232 @@ func TestPortfolio_ListHistoricalFills_RequestPath(t *testing.T) {
 		t.Fatalf("path: %v", mt.req)
 	}
 }
+
+func TestAccount_GetEndpointCosts_RequestPath(t *testing.T) {
+	body := []byte(`{"default_cost":10,"endpoint_costs":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Account.GetEndpointCosts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/account/endpoint_costs" {
+		t.Fatalf("path: %v", mt.req)
+	}
+}
+
+func TestMarkets_GetOrderbooks_QueryAndPath(t *testing.T) {
+	body := []byte(`{"orderbooks":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Markets.GetOrderbooks(ctx, &types.GetMarketOrderbooksOpts{
+		Tickers: []string{"A", "B"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/markets/orderbooks" {
+		t.Fatalf("path: %v", mt.req)
+	}
+	q := mt.req.URL.Query()
+	if len(q["tickers"]) != 2 || q["tickers"][0] != "A" || q["tickers"][1] != "B" {
+		t.Fatalf("query: %v", q)
+	}
+}
+
+func TestAccount_GetAPILimits_RequestPath(t *testing.T) {
+	body := []byte(`{"usage_tier":"basic","read":{"refill_rate":20,"bucket_capacity":20},"write":{"refill_rate":10,"bucket_capacity":10}}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	got, err := client.Account.GetAPILimits(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/account/limits" {
+		t.Fatalf("path: %v", mt.req)
+	}
+	if got.Read.RefillRate != 20 || got.Write.BucketCapacity != 10 {
+		t.Fatalf("limits: %+v", got)
+	}
+}
+
+func TestPortfolio_ListDeposits_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"deposits":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	limit := int64(5)
+
+	_, err := client.Portfolio.ListDeposits(ctx, &types.GetDepositsOpts{Limit: &limit, Cursor: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/portfolio/deposits" {
+		t.Fatalf("path: %v", mt.req)
+	}
+	q := mt.req.URL.Query()
+	if q.Get("limit") != "5" || q.Get("cursor") != "c1" {
+		t.Fatalf("query: %v", q)
+	}
+}
+
+func TestPortfolio_ListWithdrawals_RequestPath(t *testing.T) {
+	body := []byte(`{"withdrawals":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Portfolio.ListWithdrawals(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/portfolio/withdrawals" {
+		t.Fatalf("path: %v", mt.req)
+	}
+}
+
+func TestMarkets_ListHistorical_SeriesTickerQuery(t *testing.T) {
+	body := []byte(`{"markets":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Markets.ListHistorical(ctx, &types.GetHistoricalMarketsOpts{SeriesTicker: "SERIES-A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Query().Get("series_ticker") != "SERIES-A" {
+		t.Fatalf("query: %v", mt.req.URL.Query())
+	}
+}
+
+func TestMarkets_GetOrderbooks_EmptyTickers(t *testing.T) {
+	client := New()
+	ctx := context.Background()
+	_, err := client.Markets.GetOrderbooks(ctx, &types.GetMarketOrderbooksOpts{})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestOrders_CreateV2_RequestPath(t *testing.T) {
+	body := []byte(`{"order_id":"x","fill_count":"0.00","remaining_count":"1.00","ts_ms":1}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Orders.CreateV2(ctx, &types.CreateOrderV2Request{
+		Ticker:                  "MKT",
+		ClientOrderID:           "c1",
+		Side:                    types.BookSideBid,
+		Count:                   "1.00",
+		Price:                   "0.5000",
+		TimeInForce:             types.TimeInForceGTC,
+		SelfTradePreventionType: types.SelfTradeTakerAtCross,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.Method != http.MethodPost || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+}
+
+func TestOrders_CancelV2_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"order_id":"o1","reduced_by":"1.00","ts_ms":1}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	sub := 2
+	ex := 1
+
+	_, err := client.Orders.CancelV2(ctx, "o1", &sub, &ex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.Method != http.MethodDelete || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders/o1" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+	q := mt.req.URL.Query()
+	if q.Get("subaccount") != "2" || q.Get("exchange_index") != "1" {
+		t.Fatalf("query: %v", q)
+	}
+}
+
+func TestOrders_AmendV2_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"order_id":"o1","ts_ms":1}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	sub := 1
+
+	_, err := client.Orders.AmendV2(ctx, "o1", &types.AmendOrderV2Request{
+		Ticker: "MKT",
+		Side:   types.BookSideAsk,
+		Price:  "0.6000",
+		Count:  "2.00",
+	}, &sub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.Method != http.MethodPost || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders/o1/amend" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+	if mt.req.URL.Query().Get("subaccount") != "1" {
+		t.Fatalf("query: %v", mt.req.URL.Query())
+	}
+}
+
+func TestOrders_DecreaseV2_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"order_id":"o1","remaining_count":"1.00","ts_ms":1}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	reduceBy := "1.00"
+
+	_, err := client.Orders.DecreaseV2(ctx, "o1", &types.DecreaseOrderV2Request{ReduceBy: &reduceBy}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.Method != http.MethodPost || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders/o1/decrease" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+}
+
+func TestOrders_BatchCreateV2_RequestPath(t *testing.T) {
+	body := []byte(`{"orders":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Orders.BatchCreateV2(ctx, &types.BatchCreateOrdersV2Request{Orders: []types.CreateOrderV2Request{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.Method != http.MethodPost || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders/batched" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+}
+
+func TestOrders_BatchCancelV2_RequestPath(t *testing.T) {
+	body := []byte(`{"orders":[]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Orders.BatchCancelV2(ctx, &types.BatchCancelOrdersV2Request{
+		Orders: []types.BatchCancelOrdersV2RequestOrder{{OrderID: "o1"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.Method != http.MethodDelete || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders/batched" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+}

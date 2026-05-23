@@ -66,6 +66,7 @@ type Market struct {
 	FractionalTradingEnabled bool       `json:"fractional_trading_enabled"`
 	SettlementValueDollars *string      `json:"settlement_value_dollars,omitempty"`
 	SettlementTs           *string      `json:"settlement_ts,omitempty"`
+	OccurrenceDatetime     *string      `json:"occurrence_datetime,omitempty"`
 	ExpirationValue        string       `json:"expiration_value"`
 	FeeWaiverExpirationTime *string     `json:"fee_waiver_expiration_time,omitempty"`
 	EarlyCloseCondition    string       `json:"early_close_condition,omitempty"`
@@ -136,6 +137,19 @@ type GetMarketOrderbookOpts struct {
 	Depth int
 }
 
+type GetMarketOrderbooksOpts struct {
+	Tickers []string
+}
+
+type MarketOrderbookFp struct {
+	Ticker     string           `json:"ticker"`
+	OrderbookFp OrderbookCountFp `json:"orderbook_fp"`
+}
+
+type GetMarketOrderbooksResponse struct {
+	Orderbooks []MarketOrderbookFp `json:"orderbooks"`
+}
+
 type Trade struct {
 	TradeID         string  `json:"trade_id"`
 	Ticker          string  `json:"ticker"`
@@ -147,6 +161,8 @@ type Trade struct {
 	YesPriceDollars string  `json:"yes_price_dollars"`
 	NoPriceDollars  string  `json:"no_price_dollars"`
 	TakerSide       string  `json:"taker_side"`
+	TakerOutcomeSide string `json:"taker_outcome_side,omitempty"`
+	TakerBookSide   string  `json:"taker_book_side,omitempty"`
 	CreatedTime     string  `json:"created_time"`
 }
 

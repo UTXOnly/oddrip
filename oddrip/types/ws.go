@@ -9,10 +9,16 @@ const (
 	WSChannelFill             = "fill"
 	WSChannelMarketPositions  = "market_positions"
 	WSChannelMarketLifecycle  = "market_lifecycle_v2"
-	WSChannelMultivariate    = "multivariate"
+	WSChannelMultivariateLifecycle = "multivariate_market_lifecycle"
 	WSChannelCommunications   = "communications"
 	WSChannelOrderGroup       = "order_group_updates"
 	WSChannelUserOrders       = "user_orders"
+)
+
+const (
+	WSUpdateSubscriptionAddMarkets    = "add_markets"
+	WSUpdateSubscriptionDeleteMarkets = "delete_markets"
+	WSUpdateSubscriptionGetSnapshot   = "get_snapshot"
 )
 
 type SubscribeParams struct {

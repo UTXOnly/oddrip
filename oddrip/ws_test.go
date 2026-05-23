@@ -107,6 +107,12 @@ func TestWSChannelConstants(t *testing.T) {
 	if types.WSChannelTicker != "ticker" || types.WSChannelOrderbookDelta != "orderbook_delta" {
 		t.Errorf("channel constants wrong")
 	}
+	if types.WSChannelMultivariateLifecycle != "multivariate_market_lifecycle" {
+		t.Errorf("multivariate lifecycle channel: %q", types.WSChannelMultivariateLifecycle)
+	}
+	if types.WSUpdateSubscriptionGetSnapshot != "get_snapshot" {
+		t.Errorf("get_snapshot action: %q", types.WSUpdateSubscriptionGetSnapshot)
+	}
 }
 
 type mockWSAuth struct{}
