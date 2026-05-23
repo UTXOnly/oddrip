@@ -94,10 +94,10 @@ info:
       description: Private/authenticated data channels
 servers:
   production:
-    host: api.elections.kalshi.com
+    host: external-api-ws.kalshi.com
     pathname: /trade-api/ws/v2
     protocol: wss
-    description: Production WebSocket server (encrypted connection only)
+    description: Production Trade API WebSocket server (encrypted connection only)
     security:
       - $ref: '#/components/securitySchemes/apiKey'
 defaultContentType: application/json
@@ -185,6 +185,12 @@ channels:
       - Sends `orderbook_snapshot` first, then incremental `orderbook_delta`
       updates
 
+      - Supports `update_subscription` with `add_markets` / `delete_markets` /
+      `get_snapshot` actions
+
+      - `get_snapshot` returns an `orderbook_snapshot` for the requested
+      `market_tickers` without modifying the subscription
+
 
       **Use case:** Building and maintaining a real-time orderbook
     messages:
@@ -195,14 +201,21 @@ channels:
   ticker:
     address: ticker
     title: Market Ticker
-    description: |
+    description: >
       Market price, volume, and open interest updates.
 
+
       **Requirements:**
-      - Authentication required (authenticated WebSocket connection)
+
+      - No additional channel-level authentication beyond the authenticated
+      WebSocket connection
+
       - Market specification optional (omit to receive all markets)
+
       - Supports `market_ticker`/`market_tickers` and `market_id`/`market_ids`
+
       - Updates sent whenever any ticker field changes
+
 
       **Use case:** Displaying current market prices and statistics
     messages:
@@ -211,13 +224,19 @@ channels:
   trade:
     address: trade
     title: Public Trades
-    description: |
+    description: >
       Public trade notifications when trades occur.
 
+
       **Requirements:**
-      - Authentication required (authenticated WebSocket connection)
+
+      - No additional channel-level authentication beyond the authenticated
+      WebSocket connection
+
       - Market specification optional (omit to receive all trades)
+
       - Updates sent immediately after trade execution
+
 
       **Use case:** Trade feed, volume analysis
     messages:
@@ -267,10 +286,8 @@ channels:
 
       **Monetary Values:**
 
-      All monetary values (position_cost, realized_pnl, fees_paid) are returned
-      in centi-cents (1/10,000th of a dollar).
-
-      To convert to dollars, divide by 10,000.
+      All monetary values are returned as fixed-point dollar strings (`_dollars`
+      suffix).
 
 
       **Use case:** Portfolio tracking, position monitoring, P&L calculations
@@ -286,7 +303,8 @@ channels:
 
       **Requirements:**
 
-      - Authentication required (authenticated WebSocket connection)
+      - No additional channel-level authentication beyond the authenticated
+      WebSocket connection
 
       - Receives all market and event lifecycle notifications (`market_ticker`
       filters are not supported)
@@ -295,23 +313,62 @@ channels:
 
 
       **Use case:** Tracking market lifecycle including creation,
-      de(activation), close date changes, determination, settlement
+      de(activation), close date changes, determination, settlement, price level
+      structure changes, and metadata updates
     messages:
       marketLifecycleV2:
         $ref: '#/components/messages/marketLifecycleV2'
       eventLifecycle:
         $ref: '#/components/messages/eventLifecycle'
-  multivariate:
-    address: multivariate
-    title: Multivariate Lookups
-    description: |
-      Multivariate collection lookup notifications.
+  multivariate_market_lifecycle:
+    address: multivariate_market_lifecycle
+    title: Multivariate Market & Event Lifecycle
+    description: >
+      Multivariate event (MVE) market state changes and event creation
+      notifications.
+
 
       **Requirements:**
-      - Authentication required (authenticated WebSocket connection)
+
+      - No additional channel-level authentication beyond the authenticated
+      WebSocket connection
+
+      - Receives all multivariate market lifecycle notifications
+      (`market_ticker` filters are not supported)
+
+      - Only emits lifecycle updates for multivariate events
+
+      - Event creation notifications
+
+
+      **Use case:** Tracking multivariate market lifecycle including creation,
+      de(activation), close date changes, determination, settlement
+    messages:
+      multivariateMarketLifecycle:
+        $ref: '#/components/messages/multivariateMarketLifecycle'
+      eventLifecycle:
+        $ref: '#/components/messages/eventLifecycle'
+  multivariate:
+    address: multivariate
+    title: Multivariate Lookups (Deprecated)
+    description: >
+      Deprecated: this channel predates RFQs and should not be used for new
+      integrations.
+
+
+      Multivariate collection lookup notifications.
+
+
+      **Requirements:**
+
+      - No additional channel-level authentication beyond the authenticated
+      WebSocket connection
+
       - No filtering parameters; subscription is global
 
-      **Use case:** Tracking multivariate market relationships
+
+      **Use case:** Tracking multivariate lookup interest for legacy
+      integrations
     messages:
       multivariateLookup:
         $ref: '#/components/messages/multivariateLookup'
@@ -640,6 +697,29 @@ operations:
       - $ref: '#/channels/market_lifecycle_v2/messages/eventLifecycle'
     tags:
       - name: market-data
+  receiveMultivariateMarketLifecycle:
+    action: send
+    title: Multivariate Market Lifecycle Event
+    summary: >-
+      Receive multivariate market lifecycle updates (open, close, determination,
+      etc.)
+    channel:
+      $ref: '#/channels/multivariate_market_lifecycle'
+    messages:
+      - $ref: >-
+          #/channels/multivariate_market_lifecycle/messages/multivariateMarketLifecycle
+    tags:
+      - name: market-data
+  receiveMultivariateEventLifecycle:
+    action: send
+    title: Multivariate Event Lifecycle
+    summary: Receive multivariate event creation notifications
+    channel:
+      $ref: '#/channels/multivariate_market_lifecycle'
+    messages:
+      - $ref: '#/channels/multivariate_market_lifecycle/messages/eventLifecycle'
+    tags:
+      - name: market-data
   receiveMultivariateLookup:
     action: send
     title: Multivariate Lookup
@@ -816,6 +896,16 @@ components:
             params:
               channels:
                 - market_lifecycle_v2
+        - name: subscribeMultivariateMarketLifecycle
+          summary: >-
+            Subscribe to multivariate market lifecycle events for all
+            multivariate markets
+          payload:
+            id: 15
+            cmd: subscribe
+            params:
+              channels:
+                - multivariate_market_lifecycle
         - name: subscribeCommunications
           summary: Subscribe to communications (RFQs and quotes)
           payload:
@@ -905,6 +995,26 @@ components:
                 - MARKET-TO-REMOVE-1
                 - MARKET-TO-REMOVE-2
               action: delete_markets
+    updateSubscriptionGetSnapshotCommand:
+      name: update_subscription_get_snapshot
+      title: Update Subscription - Get Snapshot
+      summary: Request an orderbook snapshot without modifying the subscription
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/updateSubscriptionCommandPayload'
+      examples:
+        - name: getSnapshot
+          summary: Request orderbook snapshot for specific markets
+          payload:
+            id: 127
+            cmd: update_subscription
+            params:
+              sids:
+                - 456
+              market_tickers:
+                - MARKET-1
+                - MARKET-2
+              action: get_snapshot
     updateSubscriptionSingleSidCommand:
       name: update_subscription_single_sid
       title: Update Subscription - Single SID Format
@@ -1175,6 +1285,7 @@ components:
               delta_fp: '-54.00'
               side: 'yes'
               ts: '2022-11-22T20:44:01Z'
+              ts_ms: 1669149841000
     ticker:
       name: ticker
       title: Ticker Update
@@ -1198,7 +1309,11 @@ components:
               open_interest_fp: '20422.00'
               dollar_volume: 16948
               dollar_open_interest: 10211
+              yes_bid_size_fp: '300.00'
+              yes_ask_size_fp: '150.00'
+              last_trade_size_fp: '25.00'
               ts: 1669149841
+              ts_ms: 1669149841000
               time: '2022-11-22T20:44:01Z'
     trade:
       name: trade
@@ -1221,6 +1336,7 @@ components:
               count_fp: '136.00'
               taker_side: 'no'
               ts: 1669149841
+              ts_ms: 1669149841000
     fill:
       name: fill
       title: Fill Update
@@ -1244,6 +1360,7 @@ components:
               count_fp: '278.00'
               action: buy
               ts: 1671899397
+              ts_ms: 1671899397000
               post_position_fp: '500.00'
               purchased_side: 'yes'
               subaccount: 3
@@ -1252,7 +1369,8 @@ components:
       title: Market Lifecycle V2
       summary: >-
         Market lifecycle events (created, activated, deactivated,
-        close_date_updated, determined, settled)
+        close_date_updated, determined, settled, price_level_structure_updated,
+        metadata_updated)
       contentType: application/json
       payload:
         $ref: '#/components/schemas/marketLifecycleV2Payload'
@@ -1267,6 +1385,7 @@ components:
               event_type: created
               open_ts: 1694635200
               close_ts: 1694721600
+              price_level_structure: linear_cent
               additional_metadata:
                 name: S&P 500 daily return on Sep 14
                 title: S&P 500 closes up by 0.02% or more
@@ -1279,6 +1398,63 @@ components:
                 expected_expiration_ts: 1694721600
                 strike_type: greater
                 floor_strike: 4487
+        - name: priceLevelStructureUpdated
+          summary: Price level structure updated event
+          payload:
+            type: market_lifecycle_v2
+            sid: 13
+            msg:
+              market_ticker: INXD-23SEP14-B4487
+              event_type: price_level_structure_updated
+              price_level_structure: deci_cent
+        - name: metadataUpdated
+          summary: Market metadata updated event
+          payload:
+            type: market_lifecycle_v2
+            sid: 13
+            msg:
+              market_ticker: KXBTC-25APR30-T0915-B95000
+              event_type: metadata_updated
+              floor_strike: 95000
+        - name: metadataUpdatedSubtitle
+          summary: Market metadata updated event (subtitle)
+          payload:
+            type: market_lifecycle_v2
+            sid: 13
+            msg:
+              market_ticker: KXBTC15M-26APR160100-00
+              event_type: metadata_updated
+              yes_sub_title: above $95,000
+    multivariateMarketLifecycle:
+      name: multivariate_market_lifecycle
+      title: Multivariate Market Lifecycle
+      summary: >-
+        Multivariate market lifecycle events (created, activated, deactivated,
+        close_date_updated, determined, settled)
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/multivariateMarketLifecyclePayload'
+      examples:
+        - name: mveMarketCreated
+          summary: Multivariate market created event
+          payload:
+            type: multivariate_market_lifecycle
+            sid: 14
+            msg:
+              market_ticker: KXMVE-TEST-EVENT-M1
+              event_type: created
+              open_ts: 1773936000
+              close_ts: 1774022400
+              additional_metadata:
+                name: MVE One
+                title: Market 1
+                yes_sub_title: YES 1
+                no_sub_title: NO 1
+                rules_primary: Rule 1
+                rules_secondary: Rule 2
+                can_close_early: true
+                event_ticker: KXMVE-TEST-EVENT
+                expected_expiration_ts: 1774029600
     eventLifecycle:
       name: event_lifecycle
       title: Event Lifecycle
@@ -1300,8 +1476,9 @@ components:
               series_ticker: KXQUICKSETTLE
     multivariateLookup:
       name: multivariate_lookup
-      title: Multivariate Lookup
-      summary: Multivariate collection lookup notification
+      title: Multivariate Lookup (Deprecated)
+      summary: Deprecated multivariate collection lookup notification
+      description: This message predates RFQs and should not be used for new integrations.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/multivariateLookupPayload'
@@ -1339,13 +1516,9 @@ components:
               user_id: user123
               market_ticker: FED-23DEC-T3.00
               position_fp: '100.00'
-              position_cost: 500000
               position_cost_dollars: '50.0000'
-              realized_pnl: 100000
               realized_pnl_dollars: '10.0000'
-              fees_paid: 10000
               fees_paid_dollars: '1.0000'
-              position_fee_cost: 5000
               position_fee_cost_dollars: '0.5000'
               volume_fp: '15.00'
     orderGroupUpdates:
@@ -1396,7 +1569,9 @@ components:
               order_group_id: og_123
               self_trade_prevention_type: taker_at_cross
               created_time: '2024-12-01T10:00:00Z'
+              created_ts_ms: 1733047200000
               expiration_time: '2024-12-01T11:00:00Z'
+              expiration_ts_ms: 1733050800000
               subaccount_number: 0
     rfqCreated:
       name: rfq_created
@@ -1563,6 +1738,14 @@ components:
       enum:
         - 'yes'
         - 'no'
+    bookSide:
+      type: string
+      description: >-
+        Side of the book for an order or trade. 'bid' is equivalent to
+        outcome_side 'yes'; 'ask' is equivalent to outcome_side 'no'.
+      enum:
+        - bid
+        - ask
     orderAction:
       type: string
       description: Order action type
@@ -1598,6 +1781,7 @@ components:
                   - fill
                   - market_positions
                   - market_lifecycle_v2
+                  - multivariate_market_lifecycle
                   - multivariate
                   - communications
                   - order_group_updates
@@ -1643,6 +1827,37 @@ components:
               description: >-
                 If true, OK responses omit the market_tickers/market_ids lists
                 for this subscription
+              default: false
+            use_yes_price:
+              type: boolean
+              description: >
+                Orderbook channel only. When true, no-side `orderbook_delta` and
+                `orderbook_snapshot` updates
+
+                are reported in yes-leg pricing instead of no-leg pricing — so a
+                single `price_dollars` scale
+
+                applies to both sides. Default false (no-side reported in no-leg
+                pricing, the existing
+
+                long-standing behavior). See [Order
+                direction](/getting_started/order_direction).
+
+
+                **Migration plan.** The default will be flipped to `true` in a
+                future release, and the flag
+
+                will then be removed entirely in a subsequent release — at which
+                point unified yes-leg
+
+                pricing becomes the only supported behavior and `use_yes_price:
+                false` will no longer toggle
+
+                the legacy no-leg pricing. Integrations relying on the legacy
+                behavior should migrate before
+
+                the default flip; concrete dates will be announced before each
+                step.
               default: false
             shard_factor:
               type: integer
@@ -1734,6 +1949,7 @@ components:
               enum:
                 - add_markets
                 - delete_markets
+                - get_snapshot
     subscribedResponsePayload:
       type: object
       required:
@@ -2028,10 +2244,17 @@ components:
                 delta.
             ts:
               type: string
+              deprecated: true
               description: >-
-                Optional - Timestamp for when the orderbook change was recorded
-                (RFC3339)
+                Deprecated - Optional timestamp for when the orderbook change
+                was recorded (RFC3339). Use ts_ms instead.
               format: date-time
+            ts_ms:
+              type: integer
+              description: >-
+                Optional - Unix timestamp for when the orderbook change was
+                recorded (in milliseconds)
+              format: int64
     tickerPayload:
       type: object
       required:
@@ -2052,11 +2275,15 @@ components:
             - price_dollars
             - yes_bid_dollars
             - yes_ask_dollars
+            - yes_bid_size_fp
+            - yes_ask_size_fp
+            - last_trade_size_fp
             - volume_fp
             - open_interest_fp
             - dollar_volume
             - dollar_open_interest
             - ts
+            - ts_ms
             - time
           properties:
             market_ticker:
@@ -2086,13 +2313,32 @@ components:
               type: integer
               description: Number of dollars positioned in the market currently
               minimum: 0
+            yes_bid_size_fp:
+              type: string
+              description: Fixed-point contracts at best bid (2 decimals)
+            yes_ask_size_fp:
+              type: string
+              description: Fixed-point contracts at best ask (2 decimals)
+            last_trade_size_fp:
+              type: string
+              description: Fixed-point contracts in last trade (2 decimals)
             ts:
               type: integer
-              description: Unix timestamp for when the update happened (in seconds)
+              deprecated: true
+              description: >-
+                Deprecated - Unix timestamp for when the update happened (in
+                seconds). Use ts_ms instead.
+              format: int64
+            ts_ms:
+              type: integer
+              description: Unix timestamp for when the update happened (in milliseconds)
               format: int64
             time:
               type: string
-              description: Timestamp for when the update happened (RFC3339)
+              deprecated: true
+              description: >-
+                Deprecated - Timestamp for when the update happened (RFC3339).
+                Use ts_ms instead.
               format: date-time
     tradePayload:
       type: object
@@ -2115,7 +2361,10 @@ components:
             - no_price_dollars
             - count_fp
             - taker_side
+            - taker_outcome_side
+            - taker_book_side
             - ts
+            - ts_ms
           properties:
             trade_id:
               type: string
@@ -2134,9 +2383,50 @@ components:
               description: Fixed-point contracts traded (2 decimals)
             taker_side:
               $ref: '#/components/schemas/marketSide'
+              deprecated: true
+              description: >
+                Deprecated. Use `taker_outcome_side` (or `taker_book_side`)
+                instead. See [Order
+                direction](/getting_started/order_direction). This field will
+                not be removed before May 14, 2026.
+            taker_outcome_side:
+              $ref: '#/components/schemas/marketSide'
+              description: >
+                The outcome side the taker is positioned for. buy-yes and
+                sell-no produce 'yes'; buy-no and sell-yes produce 'no'.
+
+
+                `taker_outcome_side` describes directional exposure only; it
+                does not change the trade's price. A trade at price `p` with
+                `taker_outcome_side=no` is matched against the maker at the same
+                price `p` with the opposite direction — both parties trade at
+                the same price.
+
+
+                `taker_outcome_side` and `taker_book_side` will become the
+                canonical way to determine trade direction. The legacy
+                `taker_side` field will be deprecated in a future release —
+                please migrate to these new fields.
+            taker_book_side:
+              $ref: '#/components/schemas/bookSide'
+              description: >
+                Same directional bit as taker_outcome_side in book vocabulary.
+                'bid' is equivalent to taker_outcome_side 'yes'; 'ask' is
+                equivalent to taker_outcome_side 'no'.
+
+
+                `taker_outcome_side` and `taker_book_side` will become the
+                canonical way to determine trade direction. The legacy
+                `taker_side` field will be deprecated in a future release —
+                please migrate to these new fields.
             ts:
               type: integer
-              description: Unix timestamp in seconds
+              deprecated: true
+              description: Deprecated - Unix timestamp in seconds. Use ts_ms instead.
+              format: int64
+            ts_ms:
+              type: integer
+              description: Unix timestamp in milliseconds
               format: int64
     fillPayload:
       type: object
@@ -2162,7 +2452,10 @@ components:
             - count_fp
             - fee_cost
             - action
+            - outcome_side
+            - book_side
             - ts
+            - ts_ms
             - post_position_fp
             - purchased_side
           properties:
@@ -2188,7 +2481,11 @@ components:
               description: If you were a taker on this fill
             side:
               $ref: '#/components/schemas/marketSide'
-              description: Side of your fill. Either "yes" or "no"
+              deprecated: true
+              description: >
+                Deprecated. Use `outcome_side` (or `book_side`) instead. See
+                [Order direction](/getting_started/order_direction). This field
+                will not be removed before May 14, 2026.
             yes_price_dollars:
               type: string
               description: Price for the yes side of the fill in dollars
@@ -2200,10 +2497,21 @@ components:
               description: Exchange fee paid for this fill in fixed-point dollars
             action:
               $ref: '#/components/schemas/orderAction'
-              description: Action that initiated the fill. Either "buy" or "sell"
+              deprecated: true
+              description: >
+                Deprecated. Use `outcome_side` (or `book_side`) instead. See
+                [Order direction](/getting_started/order_direction). This field
+                will not be removed before May 14, 2026.
             ts:
               type: integer
-              description: Unix timestamp for when the update happened (in seconds)
+              deprecated: true
+              description: >-
+                Deprecated - Unix timestamp for when the update happened (in
+                seconds). Use ts_ms instead.
+              format: int64
+            ts_ms:
+              type: integer
+              description: Unix timestamp for when the update happened (in milliseconds)
               format: int64
             client_order_id:
               type: string
@@ -2213,9 +2521,41 @@ components:
               description: Fixed-point position after the fill (2 decimals)
             purchased_side:
               $ref: '#/components/schemas/marketSide'
-              description: >-
-                Side of the purchased contracts. If user submitted a sell NO,
-                this field will be yes
+              deprecated: true
+              description: >
+                Deprecated. Use `outcome_side` (or `book_side`) instead. See
+                [Order direction](/getting_started/order_direction). This field
+                will not be removed before May 14, 2026.
+            outcome_side:
+              $ref: '#/components/schemas/marketSide'
+              description: >
+                The outcome side this fill positioned the user for. buy-yes and
+                sell-no produce 'yes'; buy-no and sell-yes produce 'no'.
+
+
+                `outcome_side` describes directional exposure only; it does not
+                change the fill's price. A fill at price `p` with
+                `outcome_side=no` is matched against an order at the same price
+                `p` with `outcome_side=yes` — both parties trade at the same
+                price, just on opposite directions.
+
+
+                `outcome_side` and `book_side` will become the canonical way to
+                determine fill direction. The legacy `action` and `side` fields
+                will be deprecated in a future release — please migrate to these
+                new fields.
+            book_side:
+              $ref: '#/components/schemas/bookSide'
+              description: >
+                Same directional bit as outcome_side in book vocabulary. 'bid'
+                is equivalent to outcome_side 'yes'; 'ask' is equivalent to
+                outcome_side 'no'.
+
+
+                `outcome_side` and `book_side` will become the canonical way to
+                determine fill direction. The legacy `action` and `side` fields
+                will be deprecated in a future release — please migrate to these
+                new fields.
             subaccount:
               type: integer
               description: Optional subaccount number for the fill
@@ -2239,14 +2579,26 @@ components:
           properties:
             event_type:
               type: string
-              description: |
+              description: >
                 Field to annotate which of the event type this event is for:
+
                 - `created` - Market created
+
                 - `activated` - Market activated
+
                 - `deactivated` - Market deactivated
+
                 - `close_date_updated` - Market close date updated
+
                 - `determined` - Market determined
+
                 - `settled` - Market settled
+
+                - `price_level_structure_updated` - Market price level structure
+                changed
+
+                - `metadata_updated` - Market metadata updated (e.g. floor
+                strike, yes_sub_title)
               enum:
                 - created
                 - deactivated
@@ -2254,6 +2606,8 @@ components:
                 - close_date_updated
                 - determined
                 - settled
+                - price_level_structure_updated
+                - metadata_updated
             market_ticker:
               $ref: '#/components/schemas/marketTicker'
               description: >-
@@ -2304,11 +2658,29 @@ components:
                 paused/unpaused. Boolean flag to indicate if trading is paused
                 on an open market. This should only be interpreted for an open
                 market
+            price_level_structure:
+              type: string
+              description: >-
+                Optional - This key will exist when the market is created or
+                when the price level structure is updated. The price level
+                structure of the market
+              enum:
+                - linear_cent
+                - deci_cent
+                - tapered_deci_cent
+            floor_strike:
+              type: number
+              description: >-
+                Optional - This key will ONLY exist for metadata_updated events.
+                The updated floor strike value for the market
+            yes_sub_title:
+              type: string
+              description: >-
+                Optional - This key will ONLY exist for metadata_updated events.
+                The updated yes subtitle for the market
             additional_metadata:
               type: object
-              description: >-
-                Optional - This key will only be emitted when the market is
-                created
+              description: Optional - This key will be emitted when the market is created
               properties:
                 name:
                   type: string
@@ -2337,6 +2709,14 @@ components:
                   type: number
                 custom_strike:
                   type: object
+    multivariateMarketLifecyclePayload:
+      allOf:
+        - $ref: '#/components/schemas/marketLifecycleV2Payload'
+        - type: object
+          properties:
+            type:
+              type: string
+              const: multivariate_market_lifecycle
     eventLifecyclePayload:
       type: object
       required:
@@ -2449,13 +2829,9 @@ components:
             - user_id
             - market_ticker
             - position_fp
-            - position_cost
             - position_cost_dollars
-            - realized_pnl
             - realized_pnl_dollars
-            - fees_paid
             - fees_paid_dollars
-            - position_fee_cost
             - position_fee_cost_dollars
             - volume_fp
           properties:
@@ -2468,31 +2844,17 @@ components:
             position_fp:
               type: string
               description: Fixed-point net position (2 decimals)
-            position_cost:
-              type: integer
-              description: >-
-                Current cost basis of the position in centi-cents (1/10,000th of
-                a dollar)
             position_cost_dollars:
               type: string
               description: >-
                 Current cost basis of the position as a fixed-point dollar
                 string
-            realized_pnl:
-              type: integer
-              description: Realized profit/loss in centi-cents
             realized_pnl_dollars:
               type: string
               description: Realized profit/loss as a fixed-point dollar string
-            fees_paid:
-              type: integer
-              description: Total fees paid in centi-cents
             fees_paid_dollars:
               type: string
               description: Total fees paid as a fixed-point dollar string
-            position_fee_cost:
-              type: integer
-              description: Total position fee cost in centi-cents
             position_fee_cost_dollars:
               type: string
               description: Total position fee cost as a fixed-point dollar string
@@ -2522,6 +2884,7 @@ components:
           required:
             - event_type
             - order_group_id
+            - ts_ms
           properties:
             event_type:
               type: string
@@ -2540,6 +2903,12 @@ components:
               description: >-
                 Updated contracts limit in fixed-point (2 decimals). Present for
                 "created" and "limit_updated" events only.
+            ts_ms:
+              type: integer
+              format: int64
+              description: >-
+                Matching engine timestamp at which the event was processed, as
+                Unix epoch milliseconds.
     userOrderPayload:
       type: object
       required:
@@ -2561,6 +2930,8 @@ components:
             - status
             - side
             - is_yes
+            - outcome_side
+            - book_side
             - yes_price_dollars
             - fill_count_fp
             - remaining_count_fp
@@ -2571,6 +2942,7 @@ components:
             - maker_fees_dollars
             - client_order_id
             - created_time
+            - created_ts_ms
           properties:
             order_id:
               type: string
@@ -2592,12 +2964,48 @@ components:
                 - executed
             side:
               $ref: '#/components/schemas/marketSide'
-              description: Side of the order ("yes" or "no")
+              deprecated: true
+              description: >
+                Deprecated. Use `outcome_side` (or `book_side`) instead. See
+                [Order direction](/getting_started/order_direction). This field
+                will not be removed before May 14, 2026.
             is_yes:
               type: boolean
-              description: >-
-                Whether the order is on the yes side. Equivalent to side ==
-                "yes"
+              deprecated: true
+              description: >
+                Deprecated. Use `outcome_side` (or `book_side`) instead. See
+                [Order direction](/getting_started/order_direction). This field
+                will not be removed before May 14, 2026.
+            outcome_side:
+              $ref: '#/components/schemas/marketSide'
+              description: >
+                The outcome side this order is positioned for. buy-yes and
+                sell-no produce 'yes'; buy-no and sell-yes produce 'no'.
+
+
+                `outcome_side` describes directional exposure only; it does not
+                change the order's price. An order at price `p` with
+                `outcome_side=no` is matched by an order at the same price `p`
+                with `outcome_side=yes` — both parties trade at the same price,
+                just on opposite directions.
+
+
+                `outcome_side` and `book_side` will become the canonical way to
+                determine order direction. The legacy `action`, `side`, and
+                `is_yes` fields will be deprecated in a future release — please
+                migrate to these new fields.
+            book_side:
+              $ref: '#/components/schemas/bookSide'
+              description: >
+                Same directional bit as outcome_side in book vocabulary. 'bid'
+                is equivalent to outcome_side 'yes'; 'ask' is equivalent to
+                outcome_side 'no'.
+
+
+                `outcome_side` and `book_side` will become the canonical way to
+                determine order direction. The legacy `action`, `side`, and
+                `is_yes` fields will be deprecated in a future release — please
+                migrate to these new fields.
             yes_price_dollars:
               type: string
               description: Yes price in fixed-point dollars (4 decimals)
@@ -2636,16 +3044,37 @@ components:
                 - maker
             created_time:
               type: string
-              description: Order creation time in RFC 3339 format
+              deprecated: true
+              description: >-
+                Deprecated - Order creation time in RFC3339 format. Use
+                created_ts_ms instead.
               format: date-time
+            created_ts_ms:
+              type: integer
+              description: Order creation time as a Unix timestamp in milliseconds
+              format: int64
             last_update_time:
               type: string
-              description: Last update time in RFC 3339 format
+              deprecated: true
+              description: >-
+                Deprecated - Last update time in RFC3339 format. Use
+                last_updated_ts_ms instead.
               format: date-time
+            last_updated_ts_ms:
+              type: integer
+              description: Last update time as a Unix timestamp in milliseconds
+              format: int64
             expiration_time:
               type: string
-              description: Order expiration time in RFC 3339 format
+              deprecated: true
+              description: >-
+                Deprecated - Order expiration time in RFC3339 format. Use
+                expiration_ts_ms instead.
               format: date-time
+            expiration_ts_ms:
+              type: integer
+              description: Order expiration time as a Unix timestamp in milliseconds
+              format: int64
             subaccount_number:
               type: integer
               description: Subaccount number (0 for primary, 1-32 for subaccounts)
@@ -2880,51 +3309,6 @@ components:
         - sid
         - msg
       properties:
-        '8':
-          const: Unknown channel name
-          description: Invalid channel in subscribe
-        '9':
-          const: Authentication required
-          description: Channel requires authenticated connection
-        '10':
-          const: Channel error
-          description: Channel-specific error
-        '11':
-          const: Invalid parameter
-          description: Malformed parameter value
-        '12':
-          const: Exactly one subscription ID is required
-          description: For update_subscription
-        '13':
-          const: Unsupported action
-          description: Invalid action for update_subscription
-        '14':
-          const: Market Ticker required
-          description: Missing market specification (market_ticker or market_id)
-        '15':
-          const: Action required
-          description: Missing action in update_subscription
-        '16':
-          const: Market not found
-          description: Invalid market_ticker or market_id
-        '17':
-          const: Internal error
-          description: Server-side processing error
-        '18':
-          const: Command timeout
-          description: Server timed out while processing command
-        '19':
-          const: shard_factor must be > 0
-          description: Invalid shard_factor
-        '20':
-          const: shard_factor is required when shard_key is set
-          description: Missing shard_factor when shard_key is set
-        '21':
-          const: shard_key must be >= 0 and < shard_factor
-          description: Invalid shard_key
-        '22':
-          const: shard_factor must be <= 100
-          description: shard_factor too large
         type:
           type: string
           const: quote_executed

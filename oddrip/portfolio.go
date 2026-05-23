@@ -108,3 +108,29 @@ func (s *PortfolioService) ListHistoricalOrders(ctx context.Context, opts *types
 	}
 	return &out, nil
 }
+
+func (s *PortfolioService) ListDeposits(ctx context.Context, opts *types.GetDepositsOpts) (*types.GetDepositsResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetDepositsResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "deposits"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *PortfolioService) ListWithdrawals(ctx context.Context, opts *types.GetWithdrawalsOpts) (*types.GetWithdrawalsResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetWithdrawalsResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "withdrawals"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

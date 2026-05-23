@@ -113,3 +113,58 @@ func (s *OrdersService) BatchCancel(ctx context.Context, req *types.BatchCancelO
 	}
 	return &out, nil
 }
+
+func (s *OrdersService) CreateV2(ctx context.Context, req *types.CreateOrderV2Request) (*types.CreateOrderV2Response, error) {
+	var out types.CreateOrderV2Response
+	if err := s.client.post(ctx, joinPath("portfolio", "events", "orders"), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *OrdersService) CancelV2(ctx context.Context, orderID string, subaccount, exchangeIndex *int) (*types.CancelOrderV2Response, error) {
+	v := url.Values{}
+	encodeQueryInt(v, "subaccount", subaccount)
+	encodeQueryInt(v, "exchange_index", exchangeIndex)
+	var out types.CancelOrderV2Response
+	if err := s.client.delete(ctx, joinPath("portfolio", "events", "orders", orderID), v, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *OrdersService) AmendV2(ctx context.Context, orderID string, req *types.AmendOrderV2Request, subaccount *int) (*types.AmendOrderV2Response, error) {
+	v := url.Values{}
+	encodeQueryInt(v, "subaccount", subaccount)
+	var out types.AmendOrderV2Response
+	if err := s.client.postQuery(ctx, joinPath("portfolio", "events", "orders", orderID, "amend"), v, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *OrdersService) DecreaseV2(ctx context.Context, orderID string, req *types.DecreaseOrderV2Request, subaccount *int) (*types.DecreaseOrderV2Response, error) {
+	v := url.Values{}
+	encodeQueryInt(v, "subaccount", subaccount)
+	var out types.DecreaseOrderV2Response
+	if err := s.client.postQuery(ctx, joinPath("portfolio", "events", "orders", orderID, "decrease"), v, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *OrdersService) BatchCreateV2(ctx context.Context, req *types.BatchCreateOrdersV2Request) (*types.BatchCreateOrdersV2Response, error) {
+	var out types.BatchCreateOrdersV2Response
+	if err := s.client.post(ctx, joinPath("portfolio", "events", "orders", "batched"), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *OrdersService) BatchCancelV2(ctx context.Context, req *types.BatchCancelOrdersV2Request) (*types.BatchCancelOrdersV2Response, error) {
+	var out types.BatchCancelOrdersV2Response
+	if err := s.client.delete(ctx, joinPath("portfolio", "events", "orders", "batched"), nil, req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

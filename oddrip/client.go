@@ -164,7 +164,11 @@ func (c *Client) get(ctx context.Context, path string, query url.Values, out int
 }
 
 func (c *Client) post(ctx context.Context, path string, body interface{}, out interface{}) error {
-	return c.do(ctx, http.MethodPost, path, nil, body, out)
+	return c.postQuery(ctx, path, nil, body, out)
+}
+
+func (c *Client) postQuery(ctx context.Context, path string, query url.Values, body interface{}, out interface{}) error {
+	return c.do(ctx, http.MethodPost, path, query, body, out)
 }
 
 func (c *Client) put(ctx context.Context, path string, body interface{}, out interface{}) error {
@@ -196,6 +200,14 @@ func encodeQueryInt(v url.Values, key string, p *int) {
 func encodeQueryBool(v url.Values, key string, p *bool) {
 	if p != nil {
 		v.Set(key, fmt.Sprintf("%t", *p))
+	}
+}
+
+func encodeQueryStrings(v url.Values, key string, values []string) {
+	for _, s := range values {
+		if s != "" {
+			v.Add(key, s)
+		}
 	}
 }
 

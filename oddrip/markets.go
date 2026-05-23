@@ -57,6 +57,19 @@ func (s *MarketsService) GetOrderbook(ctx context.Context, ticker string, opts *
 	return &out, nil
 }
 
+func (s *MarketsService) GetOrderbooks(ctx context.Context, opts *types.GetMarketOrderbooksOpts) (*types.GetMarketOrderbooksResponse, error) {
+	if opts == nil || len(opts.Tickers) == 0 {
+		return nil, fmt.Errorf("tickers required")
+	}
+	v := url.Values{}
+	encodeQueryStrings(v, "tickers", opts.Tickers)
+	var out types.GetMarketOrderbooksResponse
+	if err := s.client.get(ctx, joinPath("markets", "orderbooks"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (s *MarketsService) GetTrades(ctx context.Context, opts *types.GetTradesOpts) (*types.GetTradesResponse, error) {
 	v := url.Values{}
 	if opts != nil {
@@ -80,6 +93,7 @@ func (s *MarketsService) ListHistorical(ctx context.Context, opts *types.GetHist
 		encodeQuery(v, "cursor", opts.Cursor)
 		encodeQuery(v, "tickers", opts.Tickers)
 		encodeQuery(v, "event_ticker", opts.EventTicker)
+		encodeQuery(v, "series_ticker", opts.SeriesTicker)
 		encodeQuery(v, "mve_filter", opts.MveFilter)
 	}
 	var out types.GetMarketsResponse

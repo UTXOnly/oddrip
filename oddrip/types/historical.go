@@ -35,6 +35,7 @@ type GetHistoricalMarketsOpts struct {
 	Cursor       string
 	Tickers      string
 	EventTicker  string
+	SeriesTicker string
 	MveFilter    string
 }
 

@@ -32,6 +32,8 @@ type Order struct {
 	LastUpdateTime       *string `json:"last_update_time,omitempty"`
 	OrderGroupID         *string `json:"order_group_id,omitempty"`
 	SubaccountNumber     *int    `json:"subaccount_number,omitempty"`
+	OutcomeSide          string  `json:"outcome_side,omitempty"`
+	BookSide             string  `json:"book_side,omitempty"`
 }
 
 type CreateOrderRequest struct {

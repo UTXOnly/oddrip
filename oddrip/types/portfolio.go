@@ -1,9 +1,10 @@
 package types
 
 type GetBalanceResponse struct {
-	Balance        int64 `json:"balance"`
-	PortfolioValue int64 `json:"portfolio_value"`
-	UpdatedTs      int64 `json:"updated_ts"`
+	Balance        int64  `json:"balance"`
+	BalanceDollars string `json:"balance_dollars"`
+	PortfolioValue int64  `json:"portfolio_value"`
+	UpdatedTs      int64  `json:"updated_ts"`
 }
 
 type GetBalanceOpts struct {
@@ -11,6 +12,8 @@ type GetBalanceOpts struct {
 }
 
 type Fill struct {
+	OutcomeSide          string  `json:"outcome_side,omitempty"`
+	BookSide             string  `json:"book_side,omitempty"`
 	FillID           string  `json:"fill_id"`
 	TradeID          string  `json:"trade_id"`
 	OrderID          string  `json:"order_id"`
@@ -96,10 +99,64 @@ type GetPositionsOpts struct {
 	Subaccount  *int
 }
 
+type BucketLimit struct {
+	RefillRate     int `json:"refill_rate"`
+	BucketCapacity int `json:"bucket_capacity"`
+}
+
 type GetAccountApiLimitsResponse struct {
-	UsageTier  string `json:"usage_tier"`
-	ReadLimit  int    `json:"read_limit"`
-	WriteLimit int    `json:"write_limit"`
+	UsageTier string      `json:"usage_tier"`
+	Read      BucketLimit `json:"read"`
+	Write     BucketLimit `json:"write"`
+}
+
+type EndpointTokenCost struct {
+	Method string `json:"method"`
+	Path   string `json:"path"`
+	Cost   int    `json:"cost"`
+}
+
+type GetAccountEndpointCostsResponse struct {
+	DefaultCost   int                 `json:"default_cost"`
+	EndpointCosts []EndpointTokenCost `json:"endpoint_costs"`
+}
+
+type Deposit struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	Type        string `json:"type"`
+	AmountCents int64  `json:"amount_cents"`
+	FeeCents    int64  `json:"fee_cents"`
+	CreatedTs   int64  `json:"created_ts"`
+}
+
+type GetDepositsResponse struct {
+	Deposits []Deposit `json:"deposits"`
+	Cursor   string    `json:"cursor,omitempty"`
+}
+
+type Withdrawal struct {
+	ID          string `json:"id"`
+	Status      string `json:"status"`
+	Type        string `json:"type"`
+	AmountCents int64  `json:"amount_cents"`
+	FeeCents    int64  `json:"fee_cents"`
+	CreatedTs   int64  `json:"created_ts"`
+}
+
+type GetWithdrawalsResponse struct {
+	Withdrawals []Withdrawal `json:"withdrawals"`
+	Cursor      string       `json:"cursor,omitempty"`
+}
+
+type GetDepositsOpts struct {
+	Limit  *int64
+	Cursor string
+}
+
+type GetWithdrawalsOpts struct {
+	Limit  *int64
+	Cursor string
 }
 
 type Settlement struct {

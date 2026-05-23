@@ -32,13 +32,36 @@ func TestSubscribeCommand_Marshal(t *testing.T) {
 	}
 }
 
+func TestUpdateSubscriptionParams_GetSnapshot(t *testing.T) {
+	cmd := UpdateSubscriptionCommand{
+		ID:  3,
+		Cmd: "update_subscription",
+		Params: UpdateSubscriptionParams{
+			Sids:          []int{456},
+			Action:        WSUpdateSubscriptionGetSnapshot,
+			MarketTickers: []string{"MKT-1"},
+		},
+	}
+	data, err := json.Marshal(cmd)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded UpdateSubscriptionCommand
+	if json.Unmarshal(data, &decoded) != nil {
+		t.Fatal("unmarshal")
+	}
+	if decoded.Params.Action != "get_snapshot" || len(decoded.Params.MarketTickers) != 1 {
+		t.Fatalf("decoded: %+v", decoded.Params)
+	}
+}
+
 func TestUpdateSubscriptionParams_Action(t *testing.T) {
 	cmd := UpdateSubscriptionCommand{
 		ID:  2,
 		Cmd: "update_subscription",
 		Params: UpdateSubscriptionParams{
-			SID:    intPtr(10),
-			Action: "add_markets",
+			SID:           intPtr(10),
+			Action:        WSUpdateSubscriptionAddMarkets,
 			MarketTickers: []string{"TICK-A", "TICK-B"},
 		},
 	}
