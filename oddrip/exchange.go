@@ -19,14 +19,6 @@ func (s *ExchangeService) GetStatus(ctx context.Context) (*types.ExchangeStatus,
 	return &out, nil
 }
 
-func (s *ExchangeService) GetAnnouncements(ctx context.Context) (*types.GetExchangeAnnouncementsResponse, error) {
-	var out types.GetExchangeAnnouncementsResponse
-	if err := s.client.get(ctx, joinPath("exchange", "announcements"), nil, &out); err != nil {
-		return nil, err
-	}
-	return &out, nil
-}
-
 func (s *ExchangeService) GetSchedule(ctx context.Context) (*types.GetExchangeScheduleResponse, error) {
 	var out types.GetExchangeScheduleResponse
 	if err := s.client.get(ctx, joinPath("exchange", "schedule"), nil, &out); err != nil {

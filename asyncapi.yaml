@@ -74,6 +74,32 @@ info:
     | 21 | shard_key must be >= 0 and < shard_factor | Invalid shard_key |
 
     | 22 | shard_factor must be <= 100 | shard_factor too large |
+
+    | 26 | Subscription market limit exceeded | Adding markets would exceed the
+    per-subscription market limit |
+
+    | 27 | Too many requests | The subscription exceeded its command rate limit
+    |
+
+    | 28 | Underlying tickers required | Missing underlying_tickers for
+    subscribe_underlyings/unsubscribe_underlyings on pyth_value |
+
+
+    ## Terminal Errors
+
+
+    The following channel errors are terminal and the user must resubscribe.
+
+
+    | Code | Error |
+
+    |------|-------|
+
+    | 10 | Channel error |
+
+    | 17 | Internal error |
+
+    | 25 | Subscription buffer overflow |
   contact:
     name: Kalshi Support
     url: https://kalshi.com
@@ -133,6 +159,10 @@ channels:
         $ref: '#/components/messages/updateSubscriptionDeleteCommand'
       updateSubscriptionSingleSidCommand:
         $ref: '#/components/messages/updateSubscriptionSingleSidCommand'
+      cfbenchmarksUpdateSubscriptionCommand:
+        $ref: '#/components/messages/cfbenchmarksUpdateSubscriptionCommand'
+      pythUpdateSubscriptionCommand:
+        $ref: '#/components/messages/pythUpdateSubscriptionCommand'
       listSubscriptionsCommand:
         $ref: '#/components/messages/listSubscriptionsCommand'
       subscribedResponse:
@@ -320,6 +350,8 @@ channels:
         $ref: '#/components/messages/marketLifecycleV2'
       eventLifecycle:
         $ref: '#/components/messages/eventLifecycle'
+      eventFeeUpdate:
+        $ref: '#/components/messages/eventFeeUpdate'
   multivariate_market_lifecycle:
     address: multivariate_market_lifecycle
     title: Multivariate Market & Event Lifecycle
@@ -387,7 +419,7 @@ channels:
       - Market specification ignored
 
       - Optional sharding for fanout control:
-        - `shard_factor` (1-100) and `shard_key` (0 <= key < shard_factor)
+        - `shard_factor` (1-100) and `shard_key` (`0 <= key < shard_factor`)
       - RFQ events (RFQCreated, RFQDeleted) always sent
 
       - Quote events (QuoteCreated, QuoteAccepted, QuoteExecuted) are only sent
@@ -457,6 +489,133 @@ channels:
     messages:
       userOrder:
         $ref: '#/components/messages/userOrder'
+  cfbenchmarks_value:
+    address: cfbenchmarks_value
+    title: CF Benchmarks Value Feed
+    description: >
+      Real-time CF Benchmarks index value updates, each carrying the raw
+      upstream frame plus trailing 60-second and quarter-hour final-minute
+      averages. Requires authentication.
+
+
+      **Requirements:**
+
+      - Authentication required
+
+      - Index specification via `index_ids` (array of CF Benchmarks index IDs,
+      for example `["BRTI", "ETHUSD_RTI"]`)
+
+      - `market_ticker`/`market_tickers`/`market_id`/`market_ids` are not
+      supported for this channel
+
+      - You can seed `index_ids` in the initial subscribe, or subscribe first
+      and add indices later
+
+      - Use `index_ids: ["all"]` to receive every available index
+
+      - Supports `update_subscription` with `subscribe_indices` /
+      `unsubscribe_indices` / `indexlist` actions
+
+      - `indexlist` returns the available index IDs (as a
+      `cfbenchmarks_value_indexlist` message) without modifying the subscription
+
+      - Ticks are emitted roughly once per second; duplicate or out-of-order
+      upstream source timestamps are ignored
+
+
+      **Use case:** Consuming CF Benchmarks reference index values and their
+      short-window averages
+
+
+      **Subscription workflow:**
+
+      1. Subscribe to `cfbenchmarks_value` (optionally seeding `index_ids`). A
+      successful subscribe returns a `subscribed` response with the assigned
+      `sid`.
+
+      2. Discover available index IDs with the `indexlist` action; the server
+      replies with a `cfbenchmarks_value_indexlist` message.
+
+      3. Add or remove tracked index IDs with `subscribe_indices` /
+      `unsubscribe_indices`, or use `index_ids: ["all"]` to track everything.
+
+
+      **Averaging semantics:**
+
+
+      `avg_60s_data` (always present):
+
+      - Window is trailing and per tick: `[source_ts_ms - 60000, source_ts_ms)`
+
+      - `window_size` counts prior ticks only
+
+      - If there are no prior ticks in the trailing window, the average falls
+      back to the current tick value
+
+
+      `last_60s_windowed_average_15min` (present only in the final minute before
+      quarter-hour close: `:00`, `:15`, `:30`, `:45`):
+
+      - Active accumulation window is `(quarter_close_ts_ms - 60000,
+      quarter_close_ts_ms]`
+
+      - The start-boundary tick is excluded and the close tick is included
+
+      - This produces second-indexed counts: `:01 -> 1`, `:14 -> 14`, `:59 ->
+      59`, close tick (`:00/:15/:30/:45`) -> `60`
+
+      - The field is omitted outside that final-minute window
+
+
+      **Integration notes:**
+
+      - If you subscribe without any `index_ids`, no value events flow until you
+      add indices or switch to `["all"]`
+
+      - `sid` identifies the subscription stream; use it for
+      `update_subscription` and `unsubscribe`
+
+      - Missing `index_ids` for `subscribe_indices`/`unsubscribe_indices`
+      returns an `error` with `code: 24` ("Index IDs required"); unsupported
+      actions return a standard websocket `error`
+    messages:
+      cfbenchmarksValue:
+        $ref: '#/components/messages/cfbenchmarksValue'
+      cfbenchmarksIndexList:
+        $ref: '#/components/messages/cfbenchmarksIndexList'
+  pyth_value:
+    address: pyth_value
+    title: Pyth Value Feed
+    description: >
+      Real-time Pyth price updates for configured underlying tickers. Requires
+      authentication.
+
+
+      **Requirements:**
+
+      - Authentication required
+
+      - Seed `underlying_tickers` in the initial subscribe, or add them later
+
+      - Use `underlying_tickers: ["all"]` to receive every available underlying
+
+      - Supports `update_subscription` with `subscribe_underlyings`,
+      `unsubscribe_underlyings`, and `underlying_list` actions
+
+      - Duplicate and out-of-order source timestamps are ignored independently
+      per underlying ticker
+
+
+      Subscribe without `underlying_tickers` to create an empty subscription,
+      then use `underlying_list`
+
+      to discover recently streamed underlyings and `subscribe_underlyings` to
+      receive prices.
+    messages:
+      pythValue:
+        $ref: '#/components/messages/pythValue'
+      pythUnderlyingList:
+        $ref: '#/components/messages/pythUnderlyingList'
 operations:
   sendPing:
     action: receive
@@ -536,6 +695,30 @@ operations:
       $ref: '#/channels/root'
     messages:
       - $ref: '#/channels/root/messages/updateSubscriptionSingleSidCommand'
+    tags:
+      - name: commands
+  sendCFBenchmarksUpdateSubscription:
+    action: receive
+    title: Update Subscription - CF Benchmarks Indices
+    summary: >-
+      Add or remove tracked index IDs, or list available indices, on a
+      cfbenchmarks_value subscription
+    channel:
+      $ref: '#/channels/root'
+    messages:
+      - $ref: '#/channels/root/messages/cfbenchmarksUpdateSubscriptionCommand'
+    tags:
+      - name: commands
+  sendPythUpdateSubscription:
+    action: receive
+    title: Update Subscription - Pyth Underlyings
+    summary: >-
+      Add or remove underlying tickers, or list available underlyings, on a
+      pyth_value subscription
+    channel:
+      $ref: '#/channels/root'
+    messages:
+      - $ref: '#/channels/root/messages/pythUpdateSubscriptionCommand'
     tags:
       - name: commands
   receivePing:
@@ -697,6 +880,16 @@ operations:
       - $ref: '#/channels/market_lifecycle_v2/messages/eventLifecycle'
     tags:
       - name: market-data
+  receiveEventFeeUpdate:
+    action: send
+    title: Event Fee Override Update
+    summary: Receive notifications when an event-level fee override is set or cleared
+    channel:
+      $ref: '#/channels/market_lifecycle_v2'
+    messages:
+      - $ref: '#/channels/market_lifecycle_v2/messages/eventFeeUpdate'
+    tags:
+      - name: market-data
   receiveMultivariateMarketLifecycle:
     action: send
     title: Multivariate Market Lifecycle Event
@@ -802,6 +995,48 @@ operations:
       - $ref: '#/channels/user_orders/messages/userOrder'
     tags:
       - name: private
+  receiveCFBenchmarksValue:
+    action: send
+    title: CF Benchmarks Value Update
+    summary: Receive real-time CF Benchmarks index values with trailing averages
+    channel:
+      $ref: '#/channels/cfbenchmarks_value'
+    messages:
+      - $ref: '#/channels/cfbenchmarks_value/messages/cfbenchmarksValue'
+    tags:
+      - name: market-data
+  receiveCFBenchmarksIndexList:
+    action: send
+    title: CF Benchmarks Index List
+    summary: >-
+      Receive the set of available CF Benchmarks index IDs in response to an
+      indexlist action
+    channel:
+      $ref: '#/channels/cfbenchmarks_value'
+    messages:
+      - $ref: '#/channels/cfbenchmarks_value/messages/cfbenchmarksIndexList'
+    tags:
+      - name: market-data
+  receivePythValue:
+    action: send
+    title: Pyth Value Update
+    summary: Receive deduplicated real-time Pyth prices
+    channel:
+      $ref: '#/channels/pyth_value'
+    messages:
+      - $ref: '#/channels/pyth_value/messages/pythValue'
+    tags:
+      - name: market-data
+  receivePythUnderlyingList:
+    action: send
+    title: Pyth Underlying List
+    summary: Receive recently streamed Pyth underlying tickers
+    channel:
+      $ref: '#/channels/pyth_value'
+    messages:
+      - $ref: '#/channels/pyth_value/messages/pythUnderlyingList'
+    tags:
+      - name: market-data
 components:
   messages:
     incomingPing:
@@ -925,6 +1160,28 @@ components:
               market_tickers:
                 - FED-23DEC-T3.00
               send_initial_snapshot: true
+        - name: subscribeCFBenchmarksValue
+          summary: Subscribe to cfbenchmarks_value, seeding index IDs
+          payload:
+            id: 9
+            cmd: subscribe
+            params:
+              channels:
+                - cfbenchmarks_value
+              index_ids:
+                - BRTI
+                - ETHUSD_RTI
+        - name: subscribePythValue
+          summary: Subscribe to pyth_value, seeding underlying tickers
+          payload:
+            id: 10
+            cmd: subscribe
+            params:
+              channels:
+                - pyth_value
+              underlying_tickers:
+                - Metal.XAU/USD
+                - Metal.XAG/USD
     unsubscribeCommand:
       name: unsubscribe
       title: Unsubscribe Command
@@ -1034,6 +1291,92 @@ components:
                 - NEW-MARKET-3
                 - NEW-MARKET-4
               action: add_markets
+    cfbenchmarksUpdateSubscriptionCommand:
+      name: cfbenchmarks_update_subscription
+      title: Update Subscription - CF Benchmarks Indices
+      summary: >-
+        Add or remove tracked index IDs, or list available indices, on a
+        cfbenchmarks_value subscription
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/cfbenchmarksUpdateSubscriptionCommandPayload'
+      examples:
+        - name: indexList
+          summary: List the available index IDs (does not modify the subscription)
+          payload:
+            id: 2
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: indexlist
+        - name: subscribeIndices
+          summary: Add index IDs to the subscription
+          payload:
+            id: 3
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: subscribe_indices
+              index_ids:
+                - BRTI
+        - name: unsubscribeIndices
+          summary: Remove index IDs from the subscription
+          payload:
+            id: 4
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: unsubscribe_indices
+              index_ids:
+                - BRTI
+        - name: subscribeAllIndices
+          summary: Receive all available index IDs
+          payload:
+            id: 5
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: subscribe_indices
+              index_ids:
+                - all
+    pythUpdateSubscriptionCommand:
+      name: pyth_update_subscription
+      title: Update Subscription - Pyth Underlyings
+      summary: >-
+        Add or remove underlying tickers, or list available underlyings, on a
+        pyth_value subscription
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/pythUpdateSubscriptionCommandPayload'
+      examples:
+        - name: underlyingList
+          summary: List recently streamed Pyth underlyings
+          payload:
+            id: 2
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: underlying_list
+        - name: subscribeUnderlyings
+          summary: Add underlying tickers to the subscription
+          payload:
+            id: 3
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: subscribe_underlyings
+              underlying_tickers:
+                - Metal.XAU/USD
+        - name: unsubscribeUnderlyings
+          summary: Remove underlying tickers from the subscription
+          payload:
+            id: 4
+            cmd: update_subscription
+            params:
+              sid: 1
+              action: unsubscribe_underlyings
+              underlying_tickers:
+                - Metal.XAU/USD
     subscribedResponse:
       name: subscribed
       title: Subscribed Response
@@ -1168,6 +1511,23 @@ components:
         | 21 | shard_key must be >= 0 and < shard_factor | Invalid shard_key |
 
         | 22 | shard_factor must be <= 100 | shard_factor too large |
+
+        | 23 | Match IDs required | Missing match_ids for the channel/action |
+
+        | 24 | Index IDs required | Missing index_ids for
+        subscribe_indices/unsubscribe_indices on cfbenchmarks_value |
+
+        | 25 | Subscription buffer overflow | The subscription's outbound buffer
+        was exceeded |
+
+        | 26 | Subscription market limit exceeded | Adding markets would exceed
+        the per-subscription market limit |
+
+        | 27 | Too many requests | The subscription exceeded its command rate
+        limit |
+
+        | 28 | Underlying tickers required | Missing underlying_tickers for
+        subscribe_underlyings/unsubscribe_underlyings on pyth_value |
       contentType: application/json
       payload:
         $ref: '#/components/schemas/errorResponsePayload'
@@ -1286,6 +1646,96 @@ components:
               side: 'yes'
               ts: '2022-11-22T20:44:01Z'
               ts_ms: 1669149841000
+    cfbenchmarksValue:
+      name: cfbenchmarks_value
+      title: CF Benchmarks Value Update
+      summary: >-
+        Real-time CF Benchmarks index value with trailing 60-second and
+        quarter-hour averages
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/cfbenchmarksValuePayload'
+      examples:
+        - name: cfbenchmarksValueUpdate
+          summary: >-
+            CF Benchmarks value update with 60s and final-minute quarter-hour
+            averages
+          payload:
+            type: cfbenchmarks_value
+            sid: 1
+            seq: 42
+            msg:
+              index_id: BRTI
+              received_at: 1710000000123
+              data: >-
+                {"type":"value","id":"BRTI","time":1710000000123,"value":"68000.12"}
+              avg_60s_data:
+                value: '68000.12000000'
+                window_size: 3
+                window_start_ts_ms: 1709999940123
+                window_end_ts_exclusive: 1710000000123
+              last_60s_windowed_average_15min:
+                value: '68000.23000000'
+                window_size: 14
+                window_start_ts_ms: 1709999980000
+                window_end_ts_exclusive: 1710000000123
+    cfbenchmarksIndexList:
+      name: cfbenchmarks_value_indexlist
+      title: CF Benchmarks Index List
+      summary: >-
+        The set of available CF Benchmarks index IDs, sent in response to an
+        indexlist action
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/cfbenchmarksIndexListPayload'
+      examples:
+        - name: indexListResponse
+          summary: Available index IDs
+          payload:
+            type: cfbenchmarks_value_indexlist
+            id: 2
+            sid: 1
+            seq: 1
+            msg:
+              index_ids:
+                - BRTI
+                - ETHUSD_RTI
+    pythValue:
+      name: pyth_value
+      title: Pyth Value Update
+      summary: Deduplicated real-time Pyth price for an underlying ticker
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/pythValuePayload'
+      examples:
+        - name: pythValueUpdate
+          payload:
+            type: pyth_value
+            sid: 1
+            seq: 42
+            msg:
+              underlying_ticker: Metal.XAU/USD
+              value_usd: '2365.12345000'
+              source_ts_ms: 1710000000100
+              received_at: 1710000000123
+    pythUnderlyingList:
+      name: pyth_value_underlying_list
+      title: Pyth Underlying List
+      summary: Recently streamed Pyth underlying tickers
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/pythUnderlyingListPayload'
+      examples:
+        - name: underlyingListResponse
+          payload:
+            type: pyth_value_underlying_list
+            id: 2
+            sid: 1
+            seq: 1
+            msg:
+              underlying_tickers:
+                - Metal.XAG/USD
+                - Metal.XAU/USD
     ticker:
       name: ticker
       title: Ticker Update
@@ -1407,6 +1857,10 @@ components:
               market_ticker: INXD-23SEP14-B4487
               event_type: price_level_structure_updated
               price_level_structure: deci_cent
+              price_ranges:
+                - start: '0.0000'
+                  end: '1.0000'
+                  step: '0.0010'
         - name: metadataUpdated
           summary: Market metadata updated event
           payload:
@@ -1415,7 +1869,9 @@ components:
             msg:
               market_ticker: KXBTC-25APR30-T0915-B95000
               event_type: metadata_updated
+              strike_type: between
               floor_strike: 95000
+              cap_strike: 95250
         - name: metadataUpdatedSubtitle
           summary: Market metadata updated event (subtitle)
           payload:
@@ -1474,6 +1930,33 @@ components:
               subtitle: Jan 25 at 21:50
               collateral_return_type: MECNET
               series_ticker: KXQUICKSETTLE
+    eventFeeUpdate:
+      name: event_fee_update
+      title: Event Fee Override Update
+      summary: Emitted when an event-level fee override is set or cleared
+      description: Delivered on the `market_lifecycle_v2` channel only.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/eventFeeUpdatePayload'
+      examples:
+        - name: eventFeeOverrideSet
+          summary: Event fee override set
+          payload:
+            type: event_fee_update
+            sid: 5
+            msg:
+              event_ticker: KXBTCD-26MAY2018
+              fee_type_override: quadratic
+              fee_multiplier_override: 1
+        - name: eventFeeOverrideCleared
+          summary: Event fee override cleared
+          payload:
+            type: event_fee_update
+            sid: 5
+            msg:
+              event_ticker: KXBTCD-26MAY2018
+              fee_type_override: null
+              fee_multiplier_override: null
     multivariateLookup:
       name: multivariate_lookup
       title: Multivariate Lookup (Deprecated)
@@ -1786,6 +2269,8 @@ components:
                   - communications
                   - order_group_updates
                   - user_orders
+                  - cfbenchmarks_value
+                  - pyth_value
               minItems: 1
             market_ticker:
               description: >-
@@ -1869,6 +2354,25 @@ components:
                 Shard key for communications channel fanout (requires
                 shard_factor)
               minimum: 0
+            index_ids:
+              type: array
+              description: >-
+                cfbenchmarks_value channel only. CF Benchmarks index IDs to seed
+                on the initial subscribe (omit to subscribe with no indices and
+                add them later via update_subscription; use ["all"] to track
+                every available index).
+              items:
+                type: string
+              minItems: 1
+            underlying_tickers:
+              type: array
+              description: >-
+                pyth_value channel only. Underlying tickers to seed on the
+                initial subscribe (omit to subscribe with no underlyings and add
+                them later; use ["all"] to track every available underlying).
+              items:
+                type: string
+              minItems: 1
     unsubscribeCommandPayload:
       type: object
       required:
@@ -1950,6 +2454,109 @@ components:
                 - add_markets
                 - delete_markets
                 - get_snapshot
+    cfbenchmarksUpdateSubscriptionCommandPayload:
+      type: object
+      required:
+        - id
+        - cmd
+        - params
+      properties:
+        id:
+          $ref: '#/components/schemas/commandId'
+        cmd:
+          type: string
+          const: update_subscription
+        params:
+          type: object
+          required:
+            - action
+          properties:
+            sid:
+              $ref: '#/components/schemas/subscriptionId'
+              description: Single subscription ID to update (alternative to sids array)
+            sids:
+              type: array
+              description: >-
+                Array containing exactly one subscription ID (alternative to
+                sid). Either sid or sids must be provided, not both.
+              items:
+                $ref: '#/components/schemas/subscriptionId'
+              minItems: 1
+              maxItems: 1
+            action:
+              type: string
+              description: >
+                - `subscribe_indices`: add the supplied `index_ids` to the
+                subscription (requires `index_ids`)
+
+                - `unsubscribe_indices`: remove the supplied `index_ids` from
+                the subscription (requires `index_ids`)
+
+                - `indexlist`: respond with the available index IDs without
+                modifying the subscription
+              enum:
+                - subscribe_indices
+                - unsubscribe_indices
+                - indexlist
+            index_ids:
+              type: array
+              description: >-
+                CF Benchmarks index IDs to add or remove. Use ["all"] to track
+                every available index. Required for subscribe_indices and
+                unsubscribe_indices.
+              items:
+                type: string
+              minItems: 1
+    pythUpdateSubscriptionCommandPayload:
+      type: object
+      required:
+        - id
+        - cmd
+        - params
+      properties:
+        id:
+          $ref: '#/components/schemas/commandId'
+        cmd:
+          type: string
+          const: update_subscription
+        params:
+          type: object
+          required:
+            - action
+          properties:
+            sid:
+              $ref: '#/components/schemas/subscriptionId'
+              description: Single subscription ID to update (alternative to sids array)
+            sids:
+              type: array
+              description: >-
+                Array containing exactly one subscription ID (alternative to
+                sid)
+              items:
+                $ref: '#/components/schemas/subscriptionId'
+              minItems: 1
+              maxItems: 1
+            action:
+              type: string
+              description: >
+                - `subscribe_underlyings`: add the supplied `underlying_tickers`
+
+                - `unsubscribe_underlyings`: remove the supplied
+                `underlying_tickers`
+
+                - `underlying_list`: return recently streamed underlying tickers
+              enum:
+                - subscribe_underlyings
+                - unsubscribe_underlyings
+                - underlying_list
+            underlying_tickers:
+              type: array
+              description: >-
+                Pyth underlyings to add or remove. Use ["all"] to track every
+                available underlying.
+              items:
+                type: string
+              minItems: 1
     subscribedResponsePayload:
       type: object
       required:
@@ -2086,8 +2693,26 @@ components:
                 shard_key
 
                 - 22: shard_factor must be <= 100 - shard_factor too large
+
+                - 23: Match IDs required - Missing match_ids for the
+                channel/action
+
+                - 24: Index IDs required - Missing index_ids for
+                subscribe_indices/unsubscribe_indices on cfbenchmarks_value
+
+                - 25: Subscription buffer overflow - The subscription's outbound
+                buffer was exceeded
+
+                - 26: Subscription market limit exceeded - Adding markets would
+                exceed the per-subscription market limit
+
+                - 27: Too many requests - The subscription exceeded its command
+                rate limit
+
+                - 28: Underlying tickers required - Missing underlying_tickers
+                for subscribe_underlyings/unsubscribe_underlyings on pyth_value
               minimum: 1
-              maximum: 22
+              maximum: 28
             msg:
               type: string
               description: Human-readable error message
@@ -2134,6 +2759,175 @@ components:
                 description: Name of the subscribed channel
               sid:
                 $ref: '#/components/schemas/subscriptionId'
+    cfbenchmarksAvgData:
+      type: object
+      description: Windowed-average metadata for a CF Benchmarks index value.
+      required:
+        - value
+        - window_size
+        - window_start_ts_ms
+        - window_end_ts_exclusive
+      properties:
+        value:
+          type: string
+          description: Average value over the window, formatted to 8 decimal places
+        window_size:
+          type: integer
+          description: Number of ticks counted in the window
+          minimum: 0
+        window_start_ts_ms:
+          type: integer
+          description: Window start boundary (unix ms)
+        window_end_ts_exclusive:
+          type: integer
+          description: Window end boundary, exclusive (unix ms)
+    cfbenchmarksValuePayload:
+      type: object
+      required:
+        - type
+        - sid
+        - seq
+        - msg
+      properties:
+        type:
+          type: string
+          const: cfbenchmarks_value
+        sid:
+          $ref: '#/components/schemas/subscriptionId'
+        seq:
+          $ref: '#/components/schemas/sequenceNumber'
+        msg:
+          type: object
+          required:
+            - index_id
+            - received_at
+            - data
+            - avg_60s_data
+          properties:
+            index_id:
+              type: string
+              description: CF Benchmarks index ID (for example "BRTI")
+            received_at:
+              type: integer
+              description: When Kalshi received the upstream frame (unix ms)
+            data:
+              type: string
+              description: The raw CF Benchmarks JSON frame, as a string
+            avg_60s_data:
+              $ref: '#/components/schemas/cfbenchmarksAvgData'
+              description: >
+                Trailing 60-second average metadata. The window is per-tick and
+                trailing:
+
+                `[source_ts_ms - 60000, source_ts_ms)`, and `window_size` counts
+                prior ticks only.
+
+                If there are no prior ticks in the trailing window, the average
+                falls back to the current tick value.
+            last_60s_windowed_average_15min:
+              $ref: '#/components/schemas/cfbenchmarksAvgData'
+              description: >
+                Optional - present only during the final minute before
+                quarter-hour close (:00, :15, :30, :45).
+
+                The accumulation window is `(quarter_close_ts_ms - 60000,
+                quarter_close_ts_ms]` (start boundary
+
+                tick excluded, close tick included), producing second-indexed
+                counts up to 60 at close. Omitted
+
+                outside that final-minute window.
+    cfbenchmarksIndexListPayload:
+      type: object
+      required:
+        - type
+        - sid
+        - seq
+        - msg
+      properties:
+        type:
+          type: string
+          const: cfbenchmarks_value_indexlist
+        id:
+          $ref: '#/components/schemas/commandId'
+        sid:
+          $ref: '#/components/schemas/subscriptionId'
+        seq:
+          $ref: '#/components/schemas/sequenceNumber'
+        msg:
+          type: object
+          required:
+            - index_ids
+          properties:
+            index_ids:
+              type: array
+              description: Available CF Benchmarks index IDs
+              items:
+                type: string
+    pythValuePayload:
+      type: object
+      required:
+        - type
+        - sid
+        - seq
+        - msg
+      properties:
+        type:
+          type: string
+          const: pyth_value
+        sid:
+          $ref: '#/components/schemas/subscriptionId'
+        seq:
+          $ref: '#/components/schemas/sequenceNumber'
+        msg:
+          type: object
+          required:
+            - underlying_ticker
+            - value_usd
+            - source_ts_ms
+            - received_at
+          properties:
+            underlying_ticker:
+              type: string
+              description: Qualified Pyth underlying ticker
+            value_usd:
+              type: string
+              description: USD value formatted to 8 decimal places
+            source_ts_ms:
+              type: integer
+              description: Pyth source timestamp (unix ms)
+            received_at:
+              type: integer
+              description: When Kalshi received the Pyth update (unix ms)
+    pythUnderlyingListPayload:
+      type: object
+      required:
+        - type
+        - sid
+        - seq
+        - msg
+      properties:
+        type:
+          type: string
+          const: pyth_value_underlying_list
+        id:
+          $ref: '#/components/schemas/commandId'
+        sid:
+          $ref: '#/components/schemas/subscriptionId'
+        seq:
+          $ref: '#/components/schemas/sequenceNumber'
+        msg:
+          type: object
+          required:
+            - underlying_tickers
+          properties:
+            underlying_tickers:
+              type: array
+              description: >-
+                Underlying tickers observed on the Pyth stream in the last two
+                hours
+              items:
+                type: string
     orderbookSnapshotPayload:
       type: object
       required:
@@ -2668,11 +3462,60 @@ components:
                 - linear_cent
                 - deci_cent
                 - tapered_deci_cent
+                - center_whole_edge_half_cent
+                - center_whole_edge_quint_cent
+                - center_half_edge_half_cent
+                - center_half_edge_quint_cent
+                - center_half_edge_deci_cent
+                - center_quint_edge_quint_cent
+                - center_quint_edge_deci_cent
+            price_ranges:
+              type: array
+              description: >-
+                Optional - Emitted alongside price_level_structure (on market
+                creation and price_level_structure_updated events). The valid
+                price bands for the market, in fixed-point dollars. Use this to
+                determine valid order prices rather than hardcoding a tick size.
+              items:
+                type: object
+                required:
+                  - start
+                  - end
+                  - step
+                properties:
+                  start:
+                    type: string
+                    description: Starting price for this band, in dollars
+                  end:
+                    type: string
+                    description: Ending price for this band, in dollars
+                  step:
+                    type: string
+                    description: >-
+                      Tick size (minimum price increment) within this band, in
+                      dollars
+            strike_type:
+              type: string
+              description: >-
+                Optional - This key will ONLY exist for metadata_updated events.
+                Determines how floor_strike / cap_strike are interpreted (e.g.
+                "between" uses both, "greater" uses floor_strike only, "less"
+                uses cap_strike only)
             floor_strike:
               type: number
               description: >-
                 Optional - This key will ONLY exist for metadata_updated events.
-                The updated floor strike value for the market
+                The floor (lower bound) strike value for the market
+            cap_strike:
+              type: number
+              description: >-
+                Optional - This key will ONLY exist for metadata_updated events.
+                The cap (upper bound) strike value for the market
+            custom_strike:
+              type: object
+              description: >-
+                Optional - This key will ONLY exist for metadata_updated events
+                with a custom or structured strike type
             yes_sub_title:
               type: string
               description: >-
@@ -2770,6 +3613,45 @@ components:
               description: >-
                 Optional - String to indicate the strike period of the event if
                 there is one
+    eventFeeUpdatePayload:
+      type: object
+      required:
+        - type
+        - sid
+        - msg
+      properties:
+        type:
+          type: string
+          const: event_fee_update
+        sid:
+          $ref: '#/components/schemas/subscriptionId'
+        msg:
+          type: object
+          required:
+            - event_ticker
+            - fee_type_override
+            - fee_multiplier_override
+          properties:
+            event_ticker:
+              type: string
+              description: Unique identifier for the event
+            fee_type_override:
+              type: string
+              nullable: true
+              enum:
+                - quadratic
+                - quadratic_with_maker_fees
+                - flat
+                - null
+              description: >-
+                Event fee type override. `null` when the override has been
+                cleared.
+            fee_multiplier_override:
+              type: number
+              nullable: true
+              description: >-
+                Event fee multiplier override. `null` when the override has been
+                cleared.
     multivariateLookupPayload:
       type: object
       required:
@@ -3077,7 +3959,7 @@ components:
               format: int64
             subaccount_number:
               type: integer
-              description: Subaccount number (0 for primary, 1-32 for subaccounts)
+              description: Subaccount number (0 for primary, 1-63 for subaccounts)
     rfqCreatedPayload:
       type: object
       required:
@@ -3432,3 +4314,25 @@ x-error-codes:
     - code: 22
       name: shard_factor must be <= 100
       description: shard_factor too large
+    - code: 23
+      name: Match IDs required
+      description: Missing match_ids for the channel/action
+    - code: 24
+      name: Index IDs required
+      description: >-
+        Missing index_ids for subscribe_indices/unsubscribe_indices on
+        cfbenchmarks_value
+    - code: 25
+      name: Subscription buffer overflow
+      description: The subscription's outbound buffer was exceeded
+    - code: 26
+      name: Subscription market limit exceeded
+      description: Adding markets would exceed the per-subscription market limit
+    - code: 27
+      name: Too many requests
+      description: The subscription exceeded its command rate limit
+    - code: 28
+      name: Underlying tickers required
+      description: >-
+        Missing underlying_tickers for
+        subscribe_underlyings/unsubscribe_underlyings on pyth_value

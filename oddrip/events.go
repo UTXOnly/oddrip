@@ -20,6 +20,7 @@ func (s *EventsService) List(ctx context.Context, opts *types.GetEventsOpts) (*t
 		encodeQueryBool(v, "with_milestones", opts.WithMilestones)
 		encodeQuery(v, "status", opts.Status)
 		encodeQuery(v, "series_ticker", opts.SeriesTicker)
+		encodeQuery(v, "tickers", opts.Tickers)
 		encodeQueryInt64(v, "min_close_ts", opts.MinCloseTs)
 		encodeQueryInt64(v, "min_updated_ts", opts.MinUpdatedTs)
 	}

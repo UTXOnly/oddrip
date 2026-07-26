@@ -1,10 +1,16 @@
 package types
 
+type IndexedBalance struct {
+	ExchangeIndex int    `json:"exchange_index"`
+	Balance       string `json:"balance"`
+}
+
 type GetBalanceResponse struct {
-	Balance        int64  `json:"balance"`
-	BalanceDollars string `json:"balance_dollars"`
-	PortfolioValue int64  `json:"portfolio_value"`
-	UpdatedTs      int64  `json:"updated_ts"`
+	Balance          int64            `json:"balance"`
+	BalanceDollars   string           `json:"balance_dollars"`
+	PortfolioValue   int64            `json:"portfolio_value"`
+	UpdatedTs        int64            `json:"updated_ts"`
+	BalanceBreakdown []IndexedBalance `json:"balance_breakdown,omitempty"`
 }
 
 type GetBalanceOpts struct {
@@ -12,30 +18,23 @@ type GetBalanceOpts struct {
 }
 
 type Fill struct {
-	OutcomeSide          string  `json:"outcome_side,omitempty"`
-	BookSide             string  `json:"book_side,omitempty"`
-	FillID           string  `json:"fill_id"`
-	TradeID          string  `json:"trade_id"`
-	OrderID          string  `json:"order_id"`
-	ClientOrderID    string  `json:"client_order_id,omitempty"`
-	Ticker           string  `json:"ticker"`
-	MarketTicker     string  `json:"market_ticker"`
-	Side             string  `json:"side"`
-	Action           string  `json:"action"`
-	Count            int     `json:"count,omitempty"`
-	CountFp          string  `json:"count_fp"`
-	Price            float64 `json:"price,omitempty"`
-	YesPrice         int     `json:"yes_price,omitempty"`
-	NoPrice          int     `json:"no_price,omitempty"`
-	YesPriceDollars  string  `json:"yes_price_dollars"`
-	NoPriceDollars   string  `json:"no_price_dollars"`
-	YesPriceFixed    string  `json:"yes_price_fixed"`
-	NoPriceFixed     string  `json:"no_price_fixed"`
-	IsTaker          bool    `json:"is_taker"`
-	CreatedTime      string  `json:"created_time,omitempty"`
-	FeeCost          string  `json:"fee_cost"`
-	Ts               *int64  `json:"ts,omitempty"`
-	SubaccountNumber *int    `json:"subaccount_number,omitempty"`
+	OutcomeSide      string `json:"outcome_side"`
+	BookSide         string `json:"book_side"`
+	FillID           string `json:"fill_id"`
+	TradeID          string `json:"trade_id"`
+	OrderID          string `json:"order_id"`
+	Ticker           string `json:"ticker"`
+	MarketTicker     string `json:"market_ticker"`
+	Side             string `json:"side,omitempty"`
+	Action           string `json:"action,omitempty"`
+	CountFp          string `json:"count_fp"`
+	YesPriceDollars  string `json:"yes_price_dollars"`
+	NoPriceDollars   string `json:"no_price_dollars"`
+	IsTaker          bool   `json:"is_taker"`
+	CreatedTime      string `json:"created_time,omitempty"`
+	FeeCost          string `json:"fee_cost"`
+	Ts               *int64 `json:"ts,omitempty"`
+	SubaccountNumber *int   `json:"subaccount_number,omitempty"`
 }
 
 type GetFillsResponse struct {
@@ -55,32 +54,20 @@ type GetFillsOpts struct {
 
 type MarketPosition struct {
 	Ticker                string `json:"ticker"`
-	TotalTraded           int    `json:"total_traded"`
 	TotalTradedDollars    string `json:"total_traded_dollars"`
-	Position              int    `json:"position"`
 	PositionFp            string `json:"position_fp"`
-	MarketExposure        int    `json:"market_exposure"`
 	MarketExposureDollars string `json:"market_exposure_dollars"`
-	RealizedPnl           int    `json:"realized_pnl"`
 	RealizedPnlDollars    string `json:"realized_pnl_dollars"`
-	RestingOrdersCount    int    `json:"resting_orders_count"`
-	FeesPaid              int    `json:"fees_paid"`
 	FeesPaidDollars       string `json:"fees_paid_dollars"`
 	LastUpdatedTs         string `json:"last_updated_ts"`
 }
 
 type EventPosition struct {
 	EventTicker          string `json:"event_ticker"`
-	TotalCost            int    `json:"total_cost"`
 	TotalCostDollars     string `json:"total_cost_dollars"`
-	TotalCostShares      int64  `json:"total_cost_shares"`
 	TotalCostSharesFp    string `json:"total_cost_shares_fp"`
-	EventExposure        int    `json:"event_exposure"`
 	EventExposureDollars string `json:"event_exposure_dollars"`
-	RealizedPnl          int    `json:"realized_pnl"`
 	RealizedPnlDollars   string `json:"realized_pnl_dollars"`
-	RestingOrdersCount   int    `json:"resting_orders_count,omitempty"`
-	FeesPaid             int    `json:"fees_paid"`
 	FeesPaidDollars      string `json:"fees_paid_dollars"`
 }
 
@@ -104,10 +91,18 @@ type BucketLimit struct {
 	BucketCapacity int `json:"bucket_capacity"`
 }
 
+type ApiUsageLevelGrant struct {
+	ExchangeInstance string `json:"exchange_instance"`
+	Level            string `json:"level"`
+	ExpiresTs        *int64 `json:"expires_ts,omitempty"`
+	Source           string `json:"source"`
+}
+
 type GetAccountApiLimitsResponse struct {
-	UsageTier string      `json:"usage_tier"`
-	Read      BucketLimit `json:"read"`
-	Write     BucketLimit `json:"write"`
+	UsageTier string               `json:"usage_tier"`
+	Read       BucketLimit          `json:"read"`
+	Write      BucketLimit          `json:"write"`
+	Grants     []ApiUsageLevelGrant `json:"grants"`
 }
 
 type EndpointTokenCost struct {
@@ -128,6 +123,7 @@ type Deposit struct {
 	AmountCents int64  `json:"amount_cents"`
 	FeeCents    int64  `json:"fee_cents"`
 	CreatedTs   int64  `json:"created_ts"`
+	FinalizedTs *int64 `json:"finalized_ts,omitempty"`
 }
 
 type GetDepositsResponse struct {
@@ -142,6 +138,7 @@ type Withdrawal struct {
 	AmountCents int64  `json:"amount_cents"`
 	FeeCents    int64  `json:"fee_cents"`
 	CreatedTs   int64  `json:"created_ts"`
+	FinalizedTs *int64 `json:"finalized_ts,omitempty"`
 }
 
 type GetWithdrawalsResponse struct {
@@ -181,11 +178,18 @@ type GetSettlementsResponse struct {
 }
 
 type GetSettlementsOpts struct {
-	Limit        *int64
-	Cursor       string
-	Ticker       string
-	EventTicker  string
-	MinTs        *int64
-	MaxTs        *int64
-	Subaccount   *int
+	Limit       *int64
+	Cursor      string
+	Ticker      string
+	EventTicker string
+	MinTs       *int64
+	MaxTs       *int64
+	Subaccount  *int
+}
+
+type GetHistoricalPositionsOpts struct {
+	Ticker      string
+	EventTicker string
+	Limit       *int64
+	Cursor      string
 }

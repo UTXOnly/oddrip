@@ -9,81 +9,66 @@ type PriceRange struct {
 }
 
 type MveSelectedLeg struct {
-	EventTicker                string  `json:"event_ticker,omitempty"`
-	MarketTicker               string  `json:"market_ticker,omitempty"`
-	Side                       string  `json:"side,omitempty"`
+	EventTicker               string  `json:"event_ticker,omitempty"`
+	MarketTicker              string  `json:"market_ticker,omitempty"`
+	Side                      string  `json:"side,omitempty"`
 	YesSettlementValueDollars *string `json:"yes_settlement_value_dollars,omitempty"`
 }
 
 type Market struct {
-	Ticker                 string       `json:"ticker"`
-	EventTicker            string       `json:"event_ticker"`
-	MarketType             string       `json:"market_type"`
-	Title                  string       `json:"title"`
-	Subtitle               string       `json:"subtitle"`
-	YesSubTitle            string       `json:"yes_sub_title"`
-	NoSubTitle             string       `json:"no_sub_title"`
-	CreatedTime            string       `json:"created_time"`
-	UpdatedTime            string       `json:"updated_time"`
-	OpenTime               string       `json:"open_time"`
-	CloseTime              string       `json:"close_time"`
-	ExpectedExpirationTime *string      `json:"expected_expiration_time,omitempty"`
-	ExpirationTime         string       `json:"expiration_time"`
-	LatestExpirationTime   string       `json:"latest_expiration_time"`
-	SettlementTimerSeconds int          `json:"settlement_timer_seconds"`
-	Status                 string       `json:"status"`
-	ResponsePriceUnits     string       `json:"response_price_units"`
-	NotionalValue          int          `json:"notional_value"`
-	NotionalValueDollars   string       `json:"notional_value_dollars"`
-	YesBid                 float64      `json:"yes_bid"`
-	YesBidDollars          string       `json:"yes_bid_dollars"`
-	YesAsk                 float64      `json:"yes_ask"`
-	YesAskDollars          string       `json:"yes_ask_dollars"`
-	NoBid                  float64      `json:"no_bid"`
-	NoBidDollars           string       `json:"no_bid_dollars"`
-	NoAsk                  float64      `json:"no_ask"`
-	NoAskDollars           string       `json:"no_ask_dollars"`
-	YesBidSizeFp           string       `json:"yes_bid_size_fp"`
-	YesAskSizeFp           string       `json:"yes_ask_size_fp"`
-	LastPrice              float64      `json:"last_price"`
-	LastPriceDollars       string       `json:"last_price_dollars"`
-	PreviousYesBid         int          `json:"previous_yes_bid"`
-	PreviousYesBidDollars  string       `json:"previous_yes_bid_dollars"`
-	PreviousYesAsk         int          `json:"previous_yes_ask"`
-	PreviousYesAskDollars  string       `json:"previous_yes_ask_dollars"`
-	PreviousPrice          int          `json:"previous_price"`
-	PreviousPriceDollars   string       `json:"previous_price_dollars"`
-	Volume                 int          `json:"volume"`
-	VolumeFp               string       `json:"volume_fp"`
-	Volume24h              int          `json:"volume_24h"`
-	Volume24hFp            string       `json:"volume_24h_fp"`
-	Liquidity              int          `json:"liquidity"`
-	LiquidityDollars       string       `json:"liquidity_dollars"`
-	OpenInterest           int          `json:"open_interest"`
-	OpenInterestFp         string       `json:"open_interest_fp"`
-	Result                 string       `json:"result"`
-	CanCloseEarly          bool         `json:"can_close_early"`
-	FractionalTradingEnabled bool       `json:"fractional_trading_enabled"`
-	SettlementValueDollars *string      `json:"settlement_value_dollars,omitempty"`
-	SettlementTs           *string      `json:"settlement_ts,omitempty"`
-	OccurrenceDatetime     *string      `json:"occurrence_datetime,omitempty"`
-	ExpirationValue        string       `json:"expiration_value"`
-	FeeWaiverExpirationTime *string     `json:"fee_waiver_expiration_time,omitempty"`
-	EarlyCloseCondition    string       `json:"early_close_condition,omitempty"`
-	StrikeType             string       `json:"strike_type,omitempty"`
-	FloorStrike            *float64     `json:"floor_strike,omitempty"`
-	CapStrike              *float64     `json:"cap_strike,omitempty"`
-	FunctionalStrike       *string      `json:"functional_strike,omitempty"`
-	CustomStrike           json.RawMessage `json:"custom_strike,omitempty"`
-	RulesPrimary           string       `json:"rules_primary"`
-	RulesSecondary         string       `json:"rules_secondary"`
-	TickSize               int          `json:"tick_size"`
-	PriceLevelStructure    string       `json:"price_level_structure"`
-	PriceRanges            []PriceRange `json:"price_ranges"`
-	MveCollectionTicker    string       `json:"mve_collection_ticker,omitempty"`
-	MveSelectedLegs        []MveSelectedLeg `json:"mve_selected_legs,omitempty"`
-	PrimaryParticipantKey  *string      `json:"primary_participant_key,omitempty"`
-	IsProvisional          *bool        `json:"is_provisional,omitempty"`
+	Ticker                  string          `json:"ticker"`
+	EventTicker             string          `json:"event_ticker"`
+	MarketType              string          `json:"market_type"`
+	Title                   string          `json:"title,omitempty"`
+	Subtitle                string          `json:"subtitle,omitempty"`
+	YesSubTitle             string          `json:"yes_sub_title"`
+	NoSubTitle              string          `json:"no_sub_title"`
+	CreatedTime             string          `json:"created_time"`
+	UpdatedTime             string          `json:"updated_time"`
+	OpenTime                string          `json:"open_time"`
+	CloseTime               string          `json:"close_time"`
+	ExpectedExpirationTime  *string         `json:"expected_expiration_time,omitempty"`
+	ExpirationTime          string          `json:"expiration_time,omitempty"`
+	LatestExpirationTime    string          `json:"latest_expiration_time"`
+	SettlementTimerSeconds  int             `json:"settlement_timer_seconds"`
+	Status                  string          `json:"status"`
+	NotionalValueDollars    string          `json:"notional_value_dollars"`
+	YesBidDollars           string          `json:"yes_bid_dollars"`
+	YesAskDollars           string          `json:"yes_ask_dollars"`
+	NoBidDollars            string          `json:"no_bid_dollars"`
+	NoAskDollars            string          `json:"no_ask_dollars"`
+	YesBidSizeFp            string          `json:"yes_bid_size_fp"`
+	YesAskSizeFp            string          `json:"yes_ask_size_fp"`
+	LastPriceDollars        string          `json:"last_price_dollars"`
+	PreviousYesBidDollars   string          `json:"previous_yes_bid_dollars"`
+	PreviousYesAskDollars   string          `json:"previous_yes_ask_dollars"`
+	PreviousPriceDollars    string          `json:"previous_price_dollars"`
+	VolumeFp                string          `json:"volume_fp"`
+	Volume24hFp             string          `json:"volume_24h_fp"`
+	LiquidityDollars        string          `json:"liquidity_dollars,omitempty"`
+	OpenInterestFp          string          `json:"open_interest_fp"`
+	Result                  string          `json:"result"`
+	CanCloseEarly           bool            `json:"can_close_early"`
+	SettlementValueDollars  *string         `json:"settlement_value_dollars,omitempty"`
+	SettlementTs            *string         `json:"settlement_ts,omitempty"`
+	OccurrenceDatetime      *string         `json:"occurrence_datetime,omitempty"`
+	ExpirationValue         string          `json:"expiration_value"`
+	FeeWaiverExpirationTime *string         `json:"fee_waiver_expiration_time,omitempty"`
+	EarlyCloseCondition     string          `json:"early_close_condition,omitempty"`
+	StrikeType              string          `json:"strike_type,omitempty"`
+	FloorStrike             *float64        `json:"floor_strike,omitempty"`
+	CapStrike               *float64        `json:"cap_strike,omitempty"`
+	FunctionalStrike        *string         `json:"functional_strike,omitempty"`
+	CustomStrike            json.RawMessage `json:"custom_strike,omitempty"`
+	RulesPrimary            string          `json:"rules_primary"`
+	RulesSecondary          string          `json:"rules_secondary"`
+	PriceLevelStructure     string          `json:"price_level_structure"`
+	PriceRanges             []PriceRange    `json:"price_ranges"`
+	MveCollectionTicker     string          `json:"mve_collection_ticker,omitempty"`
+	MveSelectedLegs         []MveSelectedLeg `json:"mve_selected_legs,omitempty"`
+	PrimaryParticipantKey   *string         `json:"primary_participant_key,omitempty"`
+	IsProvisional           *bool           `json:"is_provisional,omitempty"`
+	ExchangeIndex           int             `json:"exchange_index,omitempty"`
 }
 
 type GetMarketResponse struct {
@@ -112,24 +97,12 @@ type GetMarketsOpts struct {
 	MveFilter    string
 }
 
-type OrderbookLevel [2]float64
-
-type PriceLevelDollars [2]interface{}
-
-type Orderbook struct {
-	Yes        []OrderbookLevel   `json:"yes"`
-	No         []OrderbookLevel   `json:"no"`
-	YesDollars []PriceLevelDollars `json:"yes_dollars"`
-	NoDollars  []PriceLevelDollars `json:"no_dollars"`
-}
-
 type OrderbookCountFp struct {
 	YesDollars [][2]string `json:"yes_dollars"`
 	NoDollars  [][2]string `json:"no_dollars"`
 }
 
 type GetMarketOrderbookResponse struct {
-	Orderbook   Orderbook       `json:"orderbook"`
 	OrderbookFp OrderbookCountFp `json:"orderbook_fp"`
 }
 
@@ -142,7 +115,7 @@ type GetMarketOrderbooksOpts struct {
 }
 
 type MarketOrderbookFp struct {
-	Ticker     string           `json:"ticker"`
+	Ticker      string           `json:"ticker"`
 	OrderbookFp OrderbookCountFp `json:"orderbook_fp"`
 }
 
@@ -151,19 +124,16 @@ type GetMarketOrderbooksResponse struct {
 }
 
 type Trade struct {
-	TradeID         string  `json:"trade_id"`
-	Ticker          string  `json:"ticker"`
-	Price           float64 `json:"price,omitempty"`
-	Count           int     `json:"count,omitempty"`
-	CountFp         string  `json:"count_fp"`
-	YesPrice        int     `json:"yes_price,omitempty"`
-	NoPrice         int     `json:"no_price,omitempty"`
-	YesPriceDollars string  `json:"yes_price_dollars"`
-	NoPriceDollars  string  `json:"no_price_dollars"`
-	TakerSide       string  `json:"taker_side"`
-	TakerOutcomeSide string `json:"taker_outcome_side,omitempty"`
-	TakerBookSide   string  `json:"taker_book_side,omitempty"`
-	CreatedTime     string  `json:"created_time"`
+	TradeID          string `json:"trade_id"`
+	Ticker           string `json:"ticker"`
+	CountFp          string `json:"count_fp"`
+	YesPriceDollars  string `json:"yes_price_dollars"`
+	NoPriceDollars   string `json:"no_price_dollars"`
+	TakerSide        string `json:"taker_side,omitempty"`
+	TakerOutcomeSide string `json:"taker_outcome_side"`
+	TakerBookSide    string `json:"taker_book_side"`
+	CreatedTime      string `json:"created_time"`
+	IsBlockTrade     bool   `json:"is_block_trade"`
 }
 
 type GetTradesResponse struct {
@@ -172,9 +142,10 @@ type GetTradesResponse struct {
 }
 
 type GetTradesOpts struct {
-	Limit  *int64
-	Cursor string
-	Ticker string
-	MinTs  *int64
-	MaxTs  *int64
+	Limit        *int64
+	Cursor       string
+	Ticker       string
+	MinTs        *int64
+	MaxTs        *int64
+	IsBlockTrade *bool
 }

@@ -131,7 +131,6 @@ func runAll(ctx context.Context, client *oddrip.Client, log io.Writer) {
 	}
 
 	logCall("Exchange.GetStatus", func() { client.Exchange.GetStatus(ctx) })
-	logCall("Exchange.GetAnnouncements", func() { client.Exchange.GetAnnouncements(ctx) })
 	logCall("Exchange.GetSchedule", func() { client.Exchange.GetSchedule(ctx) })
 	logCall("Exchange.GetUserDataTimestamp", func() { client.Exchange.GetUserDataTimestamp(ctx) })
 	logCall("Exchange.GetHistoricalCutoff", func() { client.Exchange.GetHistoricalCutoff(ctx) })
@@ -228,30 +227,32 @@ func runLiveOrder(ctx context.Context, client *oddrip.Client, log io.Writer) {
 		return
 	}
 	ticker := markets.Markets[0].Ticker
-	yesPrice := 1
-	req := &types.CreateOrderRequest{
-		Ticker:      ticker,
-		Side:        types.OrderSideYes,
-		Action:      types.OrderActionBuy,
-		Count:       ptr(1),
-		YesPrice:    &yesPrice,
-		TimeInForce: ptr(types.TimeInForceGTC),
+	req := &types.CreateOrderV2Request{
+		Ticker:                  ticker,
+		ClientOrderID:           "example-resting",
+		Side:                    types.BookSideBid,
+		Count:                   "1.00",
+		Price:                   "0.0100",
+		TimeInForce:             types.TimeInForceGTC,
+		SelfTradePreventionType: types.SelfTradeTakerAtCross,
 	}
-	createResp, err := client.Orders.Create(ctx, req)
+	createResp, err := client.Orders.CreateV2(ctx, req)
 	if err != nil {
-		fmt.Fprintf(log, "Orders.Create (resting) error: %v\n\n", err)
+		fmt.Fprintf(log, "Orders.CreateV2 (resting) error: %v\n\n", err)
 		return
 	}
-	fmt.Fprintf(log, "Orders.Create (resting) response: order_id=%s — left resting for you to confirm.\n", createResp.Order.OrderID)
+	fmt.Fprintf(log, "Orders.CreateV2 (resting) response: order_id=%s — left resting for you to confirm.\n", createResp.OrderID)
 
-	createResp2, err := client.Orders.Create(ctx, req)
+	req2 := *req
+	req2.ClientOrderID = "example-cancel"
+	createResp2, err := client.Orders.CreateV2(ctx, &req2)
 	if err != nil {
-		fmt.Fprintf(log, "Orders.Create (to cancel) error: %v\n\n", err)
+		fmt.Fprintf(log, "Orders.CreateV2 (to cancel) error: %v\n\n", err)
 		return
 	}
-	fmt.Fprintf(log, "Orders.Create (to cancel) response: order_id=%s\n", createResp2.Order.OrderID)
-	_, _ = client.Orders.Cancel(ctx, createResp2.Order.OrderID, nil)
-	fmt.Fprintf(log, "Orders.Cancel called on second order. First order (%s) remains resting.\n\n", createResp.Order.OrderID)
+	fmt.Fprintf(log, "Orders.CreateV2 (to cancel) response: order_id=%s\n", createResp2.OrderID)
+	_, _ = client.Orders.CancelV2(ctx, createResp2.OrderID, nil, nil)
+	fmt.Fprintf(log, "Orders.CancelV2 called on second order. First order (%s) remains resting.\n\n", createResp.OrderID)
 }
 
 func ptr[T any](v T) *T { return &v }

@@ -278,8 +278,15 @@ func (ws *WSConn) ListSubscriptions(ctx context.Context) (*types.ListSubscriptio
 }
 
 func (ws *WSConn) UpdateSubscription(ctx context.Context, params types.UpdateSubscriptionParams) (*types.OKResponse, error) {
-	if params.Action != "add_markets" && params.Action != "delete_markets" {
-		return nil, errors.New("action must be add_markets or delete_markets")
+	switch params.Action {
+	case types.WSUpdateSubscriptionAddMarkets,
+		types.WSUpdateSubscriptionDeleteMarkets,
+		types.WSUpdateSubscriptionGetSnapshot,
+		types.WSUpdateSubscriptionSubscribeUnderlyings,
+		types.WSUpdateSubscriptionUnsubscribeUnderlyings,
+		types.WSUpdateSubscriptionUnderlyingList:
+	default:
+		return nil, errors.New("action must be add_markets, delete_markets, get_snapshot, subscribe_underlyings, unsubscribe_underlyings, or underlying_list")
 	}
 	id := ws.nextIDVal()
 	cmd := types.UpdateSubscriptionCommand{ID: id, Cmd: "update_subscription", Params: params}

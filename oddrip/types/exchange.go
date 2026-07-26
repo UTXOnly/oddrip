@@ -1,15 +1,25 @@
 package types
 
+type ExchangeIndexStatus struct {
+	ExchangeIndex                int  `json:"exchange_index"`
+	ExchangeActive               bool `json:"exchange_active"`
+	TradingActive                bool `json:"trading_active"`
+	IntraExchangeTransfersActive bool `json:"intra_exchange_transfers_active"`
+}
+
 type ExchangeStatus struct {
-	ExchangeActive             bool    `json:"exchange_active"`
-	TradingActive              bool    `json:"trading_active"`
-	ExchangeEstimatedResumeTime *string `json:"exchange_estimated_resume_time,omitempty"`
+	ExchangeActive               bool                  `json:"exchange_active"`
+	TradingActive                bool                  `json:"trading_active"`
+	IntraExchangeTransfersActive *bool                 `json:"intra_exchange_transfers_active,omitempty"`
+	ExchangeEstimatedResumeTime  *string               `json:"exchange_estimated_resume_time,omitempty"`
+	ExchangeIndexStatuses        []ExchangeIndexStatus `json:"exchange_index_statuses,omitempty"`
 }
 
 type GetHistoricalCutoffResponse struct {
-	MarketSettledTs  string `json:"market_settled_ts"`
-	TradesCreatedTs  string `json:"trades_created_ts"`
-	OrdersUpdatedTs  string `json:"orders_updated_ts"`
+	MarketSettledTs                string `json:"market_settled_ts"`
+	TradesCreatedTs                string `json:"trades_created_ts"`
+	OrdersUpdatedTs                string `json:"orders_updated_ts"`
+	MarketPositionsLastUpdatedTs   string `json:"market_positions_last_updated_ts,omitempty"`
 }
 
 type GetUserDataTimestampResponse struct {
@@ -39,23 +49,12 @@ type MaintenanceWindow struct {
 }
 
 type Schedule struct {
-	StandardHours      []WeeklySchedule   `json:"standard_hours"`
+	StandardHours      []WeeklySchedule    `json:"standard_hours"`
 	MaintenanceWindows []MaintenanceWindow `json:"maintenance_windows"`
 }
 
 type GetExchangeScheduleResponse struct {
 	Schedule Schedule `json:"schedule"`
-}
-
-type Announcement struct {
-	Type         string `json:"type"`
-	Message      string `json:"message"`
-	DeliveryTime string `json:"delivery_time"`
-	Status       string `json:"status"`
-}
-
-type GetExchangeAnnouncementsResponse struct {
-	Announcements []Announcement `json:"announcements"`
 }
 
 type SeriesFeeChange struct {

@@ -78,6 +78,7 @@ func (s *MarketsService) GetTrades(ctx context.Context, opts *types.GetTradesOpt
 		encodeQuery(v, "ticker", opts.Ticker)
 		encodeQueryInt64(v, "min_ts", opts.MinTs)
 		encodeQueryInt64(v, "max_ts", opts.MaxTs)
+		encodeQueryBool(v, "is_block_trade", opts.IsBlockTrade)
 	}
 	var out types.GetTradesResponse
 	if err := s.client.get(ctx, joinPath("markets", "trades"), v, &out); err != nil {
@@ -119,6 +120,7 @@ func (s *MarketsService) GetHistoricalTrades(ctx context.Context, opts *types.Ge
 		encodeQuery(v, "ticker", opts.Ticker)
 		encodeQueryInt64(v, "min_ts", opts.MinTs)
 		encodeQueryInt64(v, "max_ts", opts.MaxTs)
+		encodeQueryBool(v, "is_block_trade", opts.IsBlockTrade)
 	}
 	var out types.GetTradesResponse
 	if err := s.client.get(ctx, joinPath("historical", "trades"), v, &out); err != nil {
