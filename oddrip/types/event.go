@@ -1,30 +1,35 @@
 package types
 
 type EventData struct {
-	EventTicker          string     `json:"event_ticker"`
-	SeriesTicker         string     `json:"series_ticker"`
-	SubTitle             string     `json:"sub_title"`
-	Title                string     `json:"title"`
-	CollateralReturnType string     `json:"collateral_return_type"`
-	MutuallyExclusive    bool       `json:"mutually_exclusive"`
-	Category             string     `json:"category"`
-	StrikeDate           *string    `json:"strike_date,omitempty"`
-	StrikePeriod         *string    `json:"strike_period,omitempty"`
-	Markets              []Market   `json:"markets,omitempty"`
-	AvailableOnBrokers   bool                    `json:"available_on_brokers"`
-	ProductMetadata      map[string]interface{}  `json:"product_metadata,omitempty"`
-	LastUpdatedTs        string                 `json:"last_updated_ts,omitempty"`
+	EventTicker            string                 `json:"event_ticker"`
+	SeriesTicker           string                 `json:"series_ticker"`
+	SubTitle               string                 `json:"sub_title"`
+	Title                  string                 `json:"title"`
+	CollateralReturnType   string                 `json:"collateral_return_type"`
+	MutuallyExclusive      bool                   `json:"mutually_exclusive"`
+	Category               string                 `json:"category"`
+	StrikeDate             *string                `json:"strike_date,omitempty"`
+	StrikePeriod           *string                `json:"strike_period,omitempty"`
+	Markets                []Market               `json:"markets,omitempty"`
+	AvailableOnBrokers     bool                   `json:"available_on_brokers"`
+	ProductMetadata        map[string]interface{} `json:"product_metadata,omitempty"`
+	SettlementSources      []SettlementSource     `json:"settlement_sources,omitempty"`
+	LastUpdatedTs          string                 `json:"last_updated_ts,omitempty"`
+	FeeTypeOverride        string                 `json:"fee_type_override,omitempty"`
+	FeeMultiplierOverride  *float64               `json:"fee_multiplier_override,omitempty"`
+	ExchangeIndex          int                    `json:"exchange_index,omitempty"`
 }
 
 type GetEventsOpts struct {
 	Limit             *int64
 	Cursor            string
-	WithNestedMarkets  *bool
-	WithMilestones     *bool
-	Status             string
-	SeriesTicker       string
-	MinCloseTs         *int64
-	MinUpdatedTs       *int64
+	WithNestedMarkets *bool
+	WithMilestones    *bool
+	Status            string
+	SeriesTicker      string
+	Tickers           string
+	MinCloseTs        *int64
+	MinUpdatedTs      *int64
 }
 
 type GetEventsResponse struct {

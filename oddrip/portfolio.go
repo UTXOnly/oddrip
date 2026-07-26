@@ -109,6 +109,21 @@ func (s *PortfolioService) ListHistoricalOrders(ctx context.Context, opts *types
 	return &out, nil
 }
 
+func (s *PortfolioService) ListHistoricalPositions(ctx context.Context, opts *types.GetHistoricalPositionsOpts) (*types.GetPositionsResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQuery(v, "ticker", opts.Ticker)
+		encodeQuery(v, "event_ticker", opts.EventTicker)
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetPositionsResponse
+	if err := s.client.get(ctx, joinPath("historical", "positions"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (s *PortfolioService) ListDeposits(ctx context.Context, opts *types.GetDepositsOpts) (*types.GetDepositsResponse, error) {
 	v := url.Values{}
 	if opts != nil {

@@ -2,7 +2,27 @@
 
 All notable changes to this project are documented here. The client tracks [Kalshi’s API changelog](https://docs.kalshi.com/changelog); repository root `openapi.yaml` / `asyncapi.yaml` are the source of truth for shapes and endpoints.
 
-## [Unreleased]
+## [0.4.0] — 2026-07-26
+
+### Added
+
+- Vendored Kalshi OpenAPI **3.26.0** (AsyncAPI remains **2.0.0** with expanded channel content).
+- **Portfolio:** `ListHistoricalPositions` for `GET /historical/positions`.
+- **Types:** `ExchangeIndexStatus`; `market_positions_last_updated_ts` on historical cutoff; `balance_breakdown` / `IndexedBalance`; `ApiUsageLevelGrant` on account limits; `is_block_trade` on trades; `exchange_index` on markets/orders; deposit/withdrawal `finalized_ts`; event `settlement_sources` and related fee/index fields; events list `tickers` filter; trades `is_block_trade` query.
+- **WebSocket:** `WSChannelPythValue`, underlying subscribe/update actions, `PythValueMsg` / `PythUnderlyingListMsg`, and `MarketLifecycleV2Msg` (including `price_ranges` and metadata strike fields).
+- Tests for the new REST paths/queries and JSON shapes above.
+
+### Changed
+
+- **Orders:** Legacy write methods (`Create`, `Cancel`, `Amend`, `Decrease`, `BatchCreate`, `BatchCancel`) removed — OpenAPI 3.26 only publishes V2 `/portfolio/events/orders*` mutations. Use `CreateV2` / `CancelV2` / `AmendV2` / `DecreaseV2` / `BatchCreateV2` / `BatchCancelV2`. GET list/get/queue-position APIs remain.
+- **Types:** Market, MarketPosition, EventPosition, Order, Fill, and Trade aligned to fixed-point / dollars fields; removed fields Kalshi dropped (`response_price_units`, `fractional_trading_enabled`, `resting_orders_count`, legacy integer prices/counts, etc.).
+- **Types:** `GetMarketOrderbookResponse` is `orderbook_fp` only.
+- **WebSocket:** `UpdateSubscription` accepts `get_snapshot` and pyth underlying actions.
+- **`oddrip.Version`** is `0.4.0`; publish with git tag **`v0.4.0`**.
+
+### Removed
+
+- **Exchange:** `GetAnnouncements` and announcement types (`GET /exchange/announcements` removed from Predictions REST).
 
 ## [0.3.0] — 2026-05-23
 

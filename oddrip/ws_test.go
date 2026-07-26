@@ -110,8 +110,14 @@ func TestWSChannelConstants(t *testing.T) {
 	if types.WSChannelMultivariateLifecycle != "multivariate_market_lifecycle" {
 		t.Errorf("multivariate lifecycle channel: %q", types.WSChannelMultivariateLifecycle)
 	}
+	if types.WSChannelPythValue != "pyth_value" {
+		t.Errorf("pyth_value channel: %q", types.WSChannelPythValue)
+	}
 	if types.WSUpdateSubscriptionGetSnapshot != "get_snapshot" {
 		t.Errorf("get_snapshot action: %q", types.WSUpdateSubscriptionGetSnapshot)
+	}
+	if types.WSUpdateSubscriptionSubscribeUnderlyings != "subscribe_underlyings" {
+		t.Errorf("subscribe_underlyings action: %q", types.WSUpdateSubscriptionSubscribeUnderlyings)
 	}
 }
 

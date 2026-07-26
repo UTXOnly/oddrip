@@ -221,7 +221,7 @@ func TestMarkets_GetOrderbooks_QueryAndPath(t *testing.T) {
 }
 
 func TestAccount_GetAPILimits_RequestPath(t *testing.T) {
-	body := []byte(`{"usage_tier":"basic","read":{"refill_rate":20,"bucket_capacity":20},"write":{"refill_rate":10,"bucket_capacity":10}}`)
+	body := []byte(`{"usage_tier":"basic","read":{"refill_rate":20,"bucket_capacity":20},"write":{"refill_rate":10,"bucket_capacity":10},"grants":[]}`)
 	mt := &mockTransport{statusCode: 200, body: body}
 	client := New(HTTPClient(&http.Client{Transport: mt}))
 	ctx := context.Background()
@@ -410,5 +410,98 @@ func TestOrders_BatchCancelV2_RequestPath(t *testing.T) {
 	}
 	if mt.req.Method != http.MethodDelete || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders/batched" {
 		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+}
+
+func TestPortfolio_ListHistoricalPositions_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"market_positions":[],"event_positions":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	limit := int64(10)
+
+	_, err := client.Portfolio.ListHistoricalPositions(ctx, &types.GetHistoricalPositionsOpts{
+		Ticker:      "MKT",
+		EventTicker: "EVT",
+		Limit:       &limit,
+		Cursor:      "c1",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req == nil || mt.req.URL.Path != "/trade-api/v2/historical/positions" {
+		t.Fatalf("path: %v", mt.req)
+	}
+	q := mt.req.URL.Query()
+	if q.Get("ticker") != "MKT" || q.Get("event_ticker") != "EVT" || q.Get("limit") != "10" || q.Get("cursor") != "c1" {
+		t.Fatalf("query: %v", q)
+	}
+}
+
+func TestMarkets_GetTrades_IsBlockTradeQuery(t *testing.T) {
+	body := []byte(`{"trades":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	block := true
+
+	_, err := client.Markets.GetTrades(ctx, &types.GetTradesOpts{IsBlockTrade: &block})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/markets/trades" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	if mt.req.URL.Query().Get("is_block_trade") != "true" {
+		t.Fatalf("query: %v", mt.req.URL.Query())
+	}
+}
+
+func TestEvents_List_TickersQuery(t *testing.T) {
+	body := []byte(`{"events":[],"cursor":""}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	_, err := client.Events.List(ctx, &types.GetEventsOpts{Tickers: "EVT-A,EVT-B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/events" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	if mt.req.URL.Query().Get("tickers") != "EVT-A,EVT-B" {
+		t.Fatalf("query: %v", mt.req.URL.Query())
+	}
+}
+
+func TestExchange_GetStatus_IndexFields(t *testing.T) {
+	want := map[string]interface{}{
+		"exchange_active":                 true,
+		"trading_active":                  true,
+		"intra_exchange_transfers_active": true,
+		"exchange_index_statuses": []map[string]interface{}{
+			{
+				"exchange_index":                  0,
+				"exchange_active":                 true,
+				"trading_active":                  true,
+				"intra_exchange_transfers_active": true,
+			},
+		},
+	}
+	body, _ := json.Marshal(want)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	got, err := client.Exchange.GetStatus(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.IntraExchangeTransfersActive == nil || !*got.IntraExchangeTransfersActive {
+		t.Fatalf("intra: %+v", got.IntraExchangeTransfersActive)
+	}
+	if len(got.ExchangeIndexStatuses) != 1 {
+		t.Fatalf("statuses: %+v", got.ExchangeIndexStatuses)
 	}
 }

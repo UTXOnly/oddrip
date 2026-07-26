@@ -1,61 +1,56 @@
 package types
 
 type Order struct {
-	OrderID              string  `json:"order_id"`
-	UserID               string  `json:"user_id"`
-	ClientOrderID        string  `json:"client_order_id"`
-	Ticker               string  `json:"ticker"`
-	Side                 string  `json:"side"`
-	Action               string  `json:"action"`
-	Type                 string  `json:"type"`
-	Status               string  `json:"status"`
-	YesPrice             int     `json:"yes_price"`
-	NoPrice              int     `json:"no_price"`
-	YesPriceDollars      string  `json:"yes_price_dollars"`
-	NoPriceDollars       string  `json:"no_price_dollars"`
-	FillCount            int     `json:"fill_count"`
-	FillCountFp          string  `json:"fill_count_fp"`
-	RemainingCount       int     `json:"remaining_count"`
-	RemainingCountFp     string  `json:"remaining_count_fp"`
-	InitialCount         int     `json:"initial_count"`
-	InitialCountFp       string  `json:"initial_count_fp"`
-	TakerFees            int     `json:"taker_fees"`
-	MakerFees            int     `json:"maker_fees"`
-	TakerFeesDollars     string  `json:"taker_fees_dollars"`
-	MakerFeesDollars     string  `json:"maker_fees_dollars"`
-	TakerFillCost        int     `json:"taker_fill_cost"`
-	MakerFillCost        int     `json:"maker_fill_cost"`
-	TakerFillCostDollars  string `json:"taker_fill_cost_dollars"`
-	MakerFillCostDollars  string `json:"maker_fill_cost_dollars"`
-	QueuePosition        int     `json:"queue_position"`
-	CreatedTime          *string `json:"created_time,omitempty"`
-	LastUpdateTime       *string `json:"last_update_time,omitempty"`
-	OrderGroupID         *string `json:"order_group_id,omitempty"`
-	SubaccountNumber     *int    `json:"subaccount_number,omitempty"`
-	OutcomeSide          string  `json:"outcome_side,omitempty"`
-	BookSide             string  `json:"book_side,omitempty"`
+	OrderID                   string  `json:"order_id"`
+	UserID                    string  `json:"user_id"`
+	ClientOrderID             string  `json:"client_order_id"`
+	Ticker                    string  `json:"ticker"`
+	Side                      string  `json:"side,omitempty"`
+	Action                    string  `json:"action,omitempty"`
+	OutcomeSide               string  `json:"outcome_side"`
+	BookSide                  string  `json:"book_side"`
+	Type                      string  `json:"type"`
+	Status                    string  `json:"status"`
+	YesPriceDollars           string  `json:"yes_price_dollars"`
+	NoPriceDollars            string  `json:"no_price_dollars"`
+	FillCountFp               string  `json:"fill_count_fp"`
+	RemainingCountFp          string  `json:"remaining_count_fp"`
+	InitialCountFp            string  `json:"initial_count_fp"`
+	TakerFeesDollars          string  `json:"taker_fees_dollars"`
+	MakerFeesDollars          string  `json:"maker_fees_dollars"`
+	TakerFillCostDollars      string  `json:"taker_fill_cost_dollars"`
+	MakerFillCostDollars      string  `json:"maker_fill_cost_dollars"`
+	ExpirationTime            *string `json:"expiration_time,omitempty"`
+	CreatedTime               *string `json:"created_time,omitempty"`
+	LastUpdateTime            *string `json:"last_update_time,omitempty"`
+	SelfTradePreventionType   *string `json:"self_trade_prevention_type,omitempty"`
+	OrderGroupID              *string `json:"order_group_id,omitempty"`
+	CancelOrderOnPause        *bool   `json:"cancel_order_on_pause,omitempty"`
+	SubaccountNumber          *int    `json:"subaccount_number,omitempty"`
+	ExchangeIndex             int     `json:"exchange_index,omitempty"`
 }
 
 type CreateOrderRequest struct {
-	Ticker                string  `json:"ticker"`
-	Side                  string  `json:"side"`
-	Action                string  `json:"action"`
-	ClientOrderID         *string `json:"client_order_id,omitempty"`
-	Count                 *int    `json:"count,omitempty"`
-	CountFp               *string `json:"count_fp,omitempty"`
-	YesPrice              *int    `json:"yes_price,omitempty"`
-	NoPrice               *int    `json:"no_price,omitempty"`
-	YesPriceDollars       *string `json:"yes_price_dollars,omitempty"`
-	NoPriceDollars        *string `json:"no_price_dollars,omitempty"`
-	ExpirationTs          *int64  `json:"expiration_ts,omitempty"`
-	TimeInForce           *string `json:"time_in_force,omitempty"`
-	BuyMaxCost            *int    `json:"buy_max_cost,omitempty"`
-	PostOnly              *bool   `json:"post_only,omitempty"`
-	ReduceOnly            *bool   `json:"reduce_only,omitempty"`
+	Ticker                  string  `json:"ticker"`
+	Side                    string  `json:"side"`
+	Action                  string  `json:"action"`
+	ClientOrderID           *string `json:"client_order_id,omitempty"`
+	Count                   *int    `json:"count,omitempty"`
+	CountFp                 *string `json:"count_fp,omitempty"`
+	YesPrice                *int    `json:"yes_price,omitempty"`
+	NoPrice                 *int    `json:"no_price,omitempty"`
+	YesPriceDollars         *string `json:"yes_price_dollars,omitempty"`
+	NoPriceDollars          *string `json:"no_price_dollars,omitempty"`
+	ExpirationTs            *int64  `json:"expiration_ts,omitempty"`
+	TimeInForce             *string `json:"time_in_force,omitempty"`
+	BuyMaxCost              *int    `json:"buy_max_cost,omitempty"`
+	PostOnly                *bool   `json:"post_only,omitempty"`
+	ReduceOnly              *bool   `json:"reduce_only,omitempty"`
 	SelfTradePreventionType *string `json:"self_trade_prevention_type,omitempty"`
-	OrderGroupID          *string `json:"order_group_id,omitempty"`
-	CancelOrderOnPause    *bool   `json:"cancel_order_on_pause,omitempty"`
-	Subaccount            *int    `json:"subaccount,omitempty"`
+	OrderGroupID            *string `json:"order_group_id,omitempty"`
+	CancelOrderOnPause      *bool   `json:"cancel_order_on_pause,omitempty"`
+	Subaccount              *int    `json:"subaccount,omitempty"`
+	ExchangeIndex           *int    `json:"exchange_index,omitempty"`
 }
 
 type CreateOrderResponse struct {
@@ -83,24 +78,25 @@ type GetOrdersOpts struct {
 }
 
 type CancelOrderResponse struct {
-	Order      Order  `json:"order"`
-	ReducedBy  int    `json:"reduced_by"`
+	Order       Order  `json:"order"`
+	ReducedBy   int    `json:"reduced_by"`
 	ReducedByFp string `json:"reduced_by_fp"`
 }
 
 type AmendOrderRequest struct {
-	Subaccount          *int    `json:"subaccount,omitempty"`
-	Ticker              string  `json:"ticker"`
-	Side                string  `json:"side"`
-	Action              string  `json:"action"`
-	ClientOrderID       *string `json:"client_order_id,omitempty"`
+	Subaccount           *int    `json:"subaccount,omitempty"`
+	Ticker               string  `json:"ticker"`
+	Side                 string  `json:"side"`
+	Action               string  `json:"action"`
+	ClientOrderID        *string `json:"client_order_id,omitempty"`
 	UpdatedClientOrderID *string `json:"updated_client_order_id,omitempty"`
-	YesPrice            *int    `json:"yes_price,omitempty"`
-	NoPrice             *int    `json:"no_price,omitempty"`
+	YesPrice             *int    `json:"yes_price,omitempty"`
+	NoPrice              *int    `json:"no_price,omitempty"`
 	YesPriceDollars      *string `json:"yes_price_dollars,omitempty"`
-	NoPriceDollars      *string `json:"no_price_dollars,omitempty"`
-	Count               *int    `json:"count,omitempty"`
-	CountFp             *string `json:"count_fp,omitempty"`
+	NoPriceDollars       *string `json:"no_price_dollars,omitempty"`
+	Count                *int    `json:"count,omitempty"`
+	CountFp              *string `json:"count_fp,omitempty"`
+	ExchangeIndex        *int    `json:"exchange_index,omitempty"`
 }
 
 type AmendOrderResponse struct {
@@ -147,9 +143,9 @@ type BatchCreateOrdersRequest struct {
 }
 
 type BatchCreateOrdersIndividualResponse struct {
-	ClientOrderID *string         `json:"client_order_id,omitempty"`
-	Order         *Order          `json:"order,omitempty"`
-	Error         *ErrorResponse  `json:"error,omitempty"`
+	ClientOrderID *string        `json:"client_order_id,omitempty"`
+	Order         *Order         `json:"order,omitempty"`
+	Error         *ErrorResponse `json:"error,omitempty"`
 }
 
 type BatchCreateOrdersResponse struct {
