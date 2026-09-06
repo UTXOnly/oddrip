@@ -119,6 +119,19 @@ func TestWSChannelConstants(t *testing.T) {
 	if types.WSUpdateSubscriptionSubscribeUnderlyings != "subscribe_underlyings" {
 		t.Errorf("subscribe_underlyings action: %q", types.WSUpdateSubscriptionSubscribeUnderlyings)
 	}
+	if types.WSChannelCFBenchmarksValue != "cfbenchmarks_value" || types.WSChannelCFBenchmarksValue5Hz != "cfbenchmarks_value_5hz" {
+		t.Errorf("cfbenchmarks channels: %q %q", types.WSChannelCFBenchmarksValue, types.WSChannelCFBenchmarksValue5Hz)
+	}
+	if types.WSUpdateSubscriptionIndexList != "indexlist" || types.WSUpdateSubscriptionSubscribeIndices != "subscribe_indices" {
+		t.Errorf("index actions: %q %q", types.WSUpdateSubscriptionIndexList, types.WSUpdateSubscriptionSubscribeIndices)
+	}
+}
+
+func TestUpdateSubscription_RejectsUnknownAction(t *testing.T) {
+	ws := &WSConn{}
+	if _, err := ws.UpdateSubscription(context.Background(), types.UpdateSubscriptionParams{Action: "not_an_action"}); err == nil {
+		t.Fatal("expected error for unknown action")
+	}
 }
 
 type mockWSAuth struct{}

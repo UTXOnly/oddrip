@@ -174,3 +174,45 @@ func TestMarketLifecycleV2Msg_Unmarshal_MetadataUpdated(t *testing.T) {
 }
 
 func intPtr(i int) *int { return &i }
+
+func TestCFBenchmarksValue5HzMsg_Unmarshal(t *testing.T) {
+	const payload = `{"index_id":"BRTI","value_usd":"65000.12345678","source_ts_ms":1716300000200,"received_at":1716300000250,"data":"{\"raw\":true}"}`
+	var out CFBenchmarksValue5HzMsg
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.IndexID != "BRTI" || out.ValueUSD != "65000.12345678" || out.SourceTsMs != 1716300000200 {
+		t.Fatalf("unexpected: %+v", out)
+	}
+	if out.Data != `{"raw":true}` {
+		t.Fatalf("data: %q", out.Data)
+	}
+}
+
+func TestCFBenchmarksValueMsg_Unmarshal(t *testing.T) {
+	const payload = `{"index_id":"BRTI","received_at":1716300000250,"data":"{}","avg_60s_data":{"index_id":"BRTI","value_usd":"64999.00000000","source_ts_ms":1716300000000}}`
+	var out CFBenchmarksValueMsg
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Avg60sData == nil || out.Avg60sData.ValueUSD != "64999.00000000" {
+		t.Fatalf("avg: %+v", out.Avg60sData)
+	}
+	if out.Last60sWindowedAverage15Min != nil {
+		t.Fatalf("unexpected 15min average: %+v", out.Last60sWindowedAverage15Min)
+	}
+}
+
+func TestSubscribeParams_IndexIDsMarshal(t *testing.T) {
+	data, err := json.Marshal(SubscribeParams{
+		Channels: []string{WSChannelCFBenchmarksValue5Hz},
+		IndexIDs: []string{"BRTI", "ETHUSD_RTI"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"channels":["cfbenchmarks_value_5hz"],"index_ids":["BRTI","ETHUSD_RTI"]}`
+	if string(data) != want {
+		t.Fatalf("marshal: %s", data)
+	}
+}

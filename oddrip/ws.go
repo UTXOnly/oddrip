@@ -284,9 +284,12 @@ func (ws *WSConn) UpdateSubscription(ctx context.Context, params types.UpdateSub
 		types.WSUpdateSubscriptionGetSnapshot,
 		types.WSUpdateSubscriptionSubscribeUnderlyings,
 		types.WSUpdateSubscriptionUnsubscribeUnderlyings,
-		types.WSUpdateSubscriptionUnderlyingList:
+		types.WSUpdateSubscriptionUnderlyingList,
+		types.WSUpdateSubscriptionSubscribeIndices,
+		types.WSUpdateSubscriptionUnsubscribeIndices,
+		types.WSUpdateSubscriptionIndexList:
 	default:
-		return nil, errors.New("action must be add_markets, delete_markets, get_snapshot, subscribe_underlyings, unsubscribe_underlyings, or underlying_list")
+		return nil, errors.New("action must be add_markets, delete_markets, get_snapshot, subscribe_underlyings, unsubscribe_underlyings, underlying_list, subscribe_indices, unsubscribe_indices, or indexlist")
 	}
 	id := ws.nextIDVal()
 	cmd := types.UpdateSubscriptionCommand{ID: id, Cmd: "update_subscription", Params: params}

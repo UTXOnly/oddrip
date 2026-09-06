@@ -4,7 +4,9 @@ type ErrorResponse struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
 	Details string `json:"details"`
-	Service string `json:"service"`
+	// Service is no longer part of the published error schema (removed in
+	// OpenAPI 3.29); kept so older payloads still decode.
+	Service string `json:"service,omitempty"`
 }
 
 type CursorPage struct {

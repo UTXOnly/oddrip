@@ -251,7 +251,7 @@ func runLiveOrder(ctx context.Context, client *oddrip.Client, log io.Writer) {
 		return
 	}
 	fmt.Fprintf(log, "Orders.CreateV2 (to cancel) response: order_id=%s\n", createResp2.OrderID)
-	_, _ = client.Orders.CancelV2(ctx, createResp2.OrderID, nil, nil)
+	_, _ = client.Orders.CancelV2(ctx, createResp2.OrderID, nil)
 	fmt.Fprintf(log, "Orders.CancelV2 called on second order. First order (%s) remains resting.\n\n", createResp.OrderID)
 }
 

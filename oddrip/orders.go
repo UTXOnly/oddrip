@@ -70,15 +70,30 @@ func (s *OrdersService) CreateV2(ctx context.Context, req *types.CreateOrderV2Re
 	return &out, nil
 }
 
-func (s *OrdersService) CancelV2(ctx context.Context, orderID string, subaccount, exchangeIndex *int) (*types.CancelOrderV2Response, error) {
+func (s *OrdersService) CancelV2(ctx context.Context, orderID string, opts *types.CancelOrderV2Opts) (*types.CancelOrderV2Response, error) {
 	v := url.Values{}
-	encodeQueryInt(v, "subaccount", subaccount)
-	encodeQueryInt(v, "exchange_index", exchangeIndex)
+	if opts != nil {
+		encodeQueryInt(v, "subaccount", opts.Subaccount)
+		encodeQueryInt(v, "exchange_index", opts.ExchangeIndex)
+		encodeQuery(v, "market_ticker", opts.MarketTicker)
+	}
 	var out types.CancelOrderV2Response
 	if err := s.client.delete(ctx, joinPath("portfolio", "events", "orders", orderID), v, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
+}
+
+// CancelAll cancels every resting event-market order for the authenticated
+// member across all exchange shards. With opts nil or Subaccount unset, orders
+// from any subaccount are eligible. Orders placed during the minute after the
+// request may also be cancelled.
+func (s *OrdersService) CancelAll(ctx context.Context, opts *types.CancelAllOrdersOpts) error {
+	v := url.Values{}
+	if opts != nil {
+		encodeQueryInt(v, "subaccount", opts.Subaccount)
+	}
+	return s.client.delete(ctx, joinPath("portfolio", "events", "orders"), v, nil, nil)
 }
 
 func (s *OrdersService) AmendV2(ctx context.Context, orderID string, req *types.AmendOrderV2Request, subaccount *int) (*types.AmendOrderV2Response, error) {

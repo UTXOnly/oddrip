@@ -38,6 +38,7 @@ type Client struct {
 	Portfolio *PortfolioService
 	Account   *AccountService
 	Events    *EventsService
+	LiveData  *LiveDataService
 }
 
 type Option func(*Client)
@@ -93,6 +94,7 @@ func New(opts ...Option) *Client {
 	c.Portfolio = &PortfolioService{client: c}
 	c.Account = &AccountService{client: c}
 	c.Events = &EventsService{client: c}
+	c.LiveData = &LiveDataService{client: c}
 	return c
 }
 

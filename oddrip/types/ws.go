@@ -14,6 +14,8 @@ const (
 	WSChannelOrderGroup            = "order_group_updates"
 	WSChannelUserOrders            = "user_orders"
 	WSChannelPythValue             = "pyth_value"
+	WSChannelCFBenchmarksValue     = "cfbenchmarks_value"
+	WSChannelCFBenchmarksValue5Hz  = "cfbenchmarks_value_5hz"
 )
 
 const (
@@ -23,6 +25,9 @@ const (
 	WSUpdateSubscriptionSubscribeUnderlyings = "subscribe_underlyings"
 	WSUpdateSubscriptionUnsubscribeUnderlyings = "unsubscribe_underlyings"
 	WSUpdateSubscriptionUnderlyingList       = "underlying_list"
+	WSUpdateSubscriptionSubscribeIndices     = "subscribe_indices"
+	WSUpdateSubscriptionUnsubscribeIndices   = "unsubscribe_indices"
+	WSUpdateSubscriptionIndexList            = "indexlist"
 )
 
 type SubscribeParams struct {
@@ -32,8 +37,10 @@ type SubscribeParams struct {
 	MarketID            string   `json:"market_id,omitempty"`
 	MarketIDs           []string `json:"market_ids,omitempty"`
 	UnderlyingTickers   []string `json:"underlying_tickers,omitempty"`
+	IndexIDs            []string `json:"index_ids,omitempty"`
 	SendInitialSnapshot *bool    `json:"send_initial_snapshot,omitempty"`
 	SkipTickerAck       *bool    `json:"skip_ticker_ack,omitempty"`
+	UseYesPrice         *bool    `json:"use_yes_price,omitempty"`
 	ShardFactor         *int     `json:"shard_factor,omitempty"`
 	ShardKey            *int     `json:"shard_key,omitempty"`
 }
@@ -60,6 +67,7 @@ type UpdateSubscriptionParams struct {
 	MarketID          string   `json:"market_id,omitempty"`
 	MarketIDs         []string `json:"market_ids,omitempty"`
 	UnderlyingTickers []string `json:"underlying_tickers,omitempty"`
+	IndexIDs          []string `json:"index_ids,omitempty"`
 	SendInitialSnapshot *bool  `json:"send_initial_snapshot,omitempty"`
 	Action            string   `json:"action"`
 }
@@ -97,6 +105,7 @@ type OKMsg struct {
 	MarketTickers     []string `json:"market_tickers,omitempty"`
 	MarketIDs         []string `json:"market_ids,omitempty"`
 	UnderlyingTickers []string `json:"underlying_tickers,omitempty"`
+	IndexIDs          []string `json:"index_ids,omitempty"`
 }
 
 type OKResponse struct {
@@ -177,4 +186,40 @@ type MarketLifecycleV2Msg struct {
 	CustomStrike        json.RawMessage                   `json:"custom_strike,omitempty"`
 	YesSubTitle         string                            `json:"yes_sub_title,omitempty"`
 	AdditionalMetadata  *MarketLifecycleAdditionalMetadata `json:"additional_metadata,omitempty"`
+}
+
+// CFBenchmarksAvgData is an averaged index value carried on the once-per-second
+// cfbenchmarks_value channel.
+type CFBenchmarksAvgData struct {
+	IndexID    string `json:"index_id,omitempty"`
+	ValueUSD   string `json:"value_usd,omitempty"`
+	SourceTsMs *int64 `json:"source_ts_ms,omitempty"`
+	WindowSec  *int   `json:"window_sec,omitempty"`
+}
+
+// CFBenchmarksValueMsg is a cfbenchmarks_value message: the raw upstream frame
+// plus the 60-second and quarter-hour averages.
+type CFBenchmarksValueMsg struct {
+	IndexID                    string               `json:"index_id"`
+	ReceivedAt                 int64                `json:"received_at"`
+	Data                       string               `json:"data"`
+	Avg60sData                 *CFBenchmarksAvgData `json:"avg_60s_data,omitempty"`
+	Last60sWindowedAverage15Min *CFBenchmarksAvgData `json:"last_60s_windowed_average_15min,omitempty"`
+}
+
+// CFBenchmarksValue5HzMsg is a cfbenchmarks_value_5hz tick: a lean raw frame
+// with parsed value fields, without the averages carried on the per-second
+// channel.
+type CFBenchmarksValue5HzMsg struct {
+	IndexID    string `json:"index_id"`
+	ValueUSD   string `json:"value_usd"`
+	SourceTsMs int64  `json:"source_ts_ms"`
+	ReceivedAt int64  `json:"received_at"`
+	Data       string `json:"data"`
+}
+
+// CFBenchmarksIndexListMsg answers the indexlist action on either
+// cfbenchmarks channel with the index IDs recently seen on that stream.
+type CFBenchmarksIndexListMsg struct {
+	IndexIDs []string `json:"index_ids"`
 }
