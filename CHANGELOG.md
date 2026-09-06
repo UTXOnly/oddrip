@@ -2,6 +2,29 @@
 
 All notable changes to this project are documented here. The client tracks [Kalshi’s API changelog](https://docs.kalshi.com/changelog); repository root `openapi.yaml` / `asyncapi.yaml` are the source of truth for shapes and endpoints.
 
+## [0.5.0] — 2026-09-06
+
+### Added
+
+- Vendored Kalshi OpenAPI **3.29.0** (AsyncAPI remains **2.0.0** with new CF Benchmarks content).
+- **Live data (new `LiveData` service):** `GetWeatherIndex` and `GetWeatherIndexCalibrations` for the Kalshi-computed city temperature index behind hourly temperature markets (`GET /live_data/weather/{city}`, `.../calibrations`), and `GetEvent` for event-keyed live data (`GET /live_data/events/{event_ticker}`).
+- **Orders:** `CancelAll` for `DELETE /portfolio/events/orders` (cancels every resting event-market order across shards).
+- **Portfolio:** `ListIntraExchangeTransfers` / `GetIntraExchangeTransfer` for `/portfolio/intra_exchange_instance_transfers`, and `GetTargetBalanceAllocation` / `SetTargetBalanceAllocation` for `/portfolio/target_balance_allocation`.
+- **Types:** weather index and calibration payloads, `EventLiveData`, `IntraExchangeInstanceTransfer` (+ status/instance constants), `TargetBalanceAllocation` and `SetTargetBalanceAllocationRequest` (+ `RestingMarginReservation` constants).
+- **Types:** `exchange_index` on `Fill`, `MarketPosition`, and `Settlement`; `description` on `ExchangeIndexStatus`; `market_ticker` on `DecreaseOrderV2Request` and batch-cancel entries (required for auto-routing when `exchange_index` is omitted or `-1`); `exchange_index` on `GetBalanceOpts`.
+- **WebSocket:** `cfbenchmarks_value` and `cfbenchmarks_value_5hz` channels with `CFBenchmarksValueMsg`, `CFBenchmarksValue5HzMsg`, and `CFBenchmarksIndexListMsg`; `index_ids` on subscribe/update params; `subscribe_indices` / `unsubscribe_indices` / `indexlist` actions; `use_yes_price` on subscribe params.
+- Tests for the new REST paths/queries, JSON shapes, and WebSocket payloads above.
+
+### Changed
+
+- **Orders:** `CancelV2` takes `*types.CancelOrderV2Opts` instead of positional `subaccount, exchangeIndex` pointers, so the new `market_ticker` auto-routing parameter can be passed.
+- **`oddrip.Version`** is `0.5.0`; publish with git tag **`v0.5.0`**.
+
+### Removed
+
+- **Types:** `EventData.available_on_brokers` (dropped from the OpenAPI `EventData` schema).
+- **Types:** `ErrorResponse.Service` is no longer part of the published error schema; the field is retained (now `omitempty`) so older payloads still decode.
+
 ## [0.4.0] — 2026-07-26
 
 ### Added

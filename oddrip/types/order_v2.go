@@ -27,6 +27,21 @@ type CreateOrderV2Response struct {
 	TsMs              int64   `json:"ts_ms"`
 }
 
+// CancelOrderV2Opts carries the query parameters for cancelling a single
+// event-market order. MarketTicker is required for auto-routing when
+// ExchangeIndex is nil or -1.
+type CancelOrderV2Opts struct {
+	Subaccount    *int
+	ExchangeIndex *int
+	MarketTicker  string
+}
+
+// CancelAllOrdersOpts carries the query parameters for cancelling every resting
+// event-market order. With Subaccount nil, orders from any subaccount match.
+type CancelAllOrdersOpts struct {
+	Subaccount *int
+}
+
 type CancelOrderV2Response struct {
 	OrderID       string `json:"order_id"`
 	ClientOrderID string `json:"client_order_id,omitempty"`
@@ -58,6 +73,8 @@ type DecreaseOrderV2Request struct {
 	ReduceBy      *string `json:"reduce_by,omitempty"`
 	ReduceTo      *string `json:"reduce_to,omitempty"`
 	ExchangeIndex *int    `json:"exchange_index,omitempty"`
+	// MarketTicker is required for auto-routing when ExchangeIndex is nil or -1.
+	MarketTicker string `json:"market_ticker,omitempty"`
 }
 
 type DecreaseOrderV2Response struct {
@@ -90,6 +107,8 @@ type BatchCancelOrdersV2RequestOrder struct {
 	OrderID       string `json:"order_id"`
 	Subaccount    *int   `json:"subaccount,omitempty"`
 	ExchangeIndex *int   `json:"exchange_index,omitempty"`
+	// MarketTicker is required for auto-routing when ExchangeIndex is nil or -1.
+	MarketTicker string `json:"market_ticker,omitempty"`
 }
 
 type BatchCancelOrdersV2Request struct {

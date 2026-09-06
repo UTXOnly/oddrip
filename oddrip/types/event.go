@@ -11,7 +11,6 @@ type EventData struct {
 	StrikeDate             *string                `json:"strike_date,omitempty"`
 	StrikePeriod           *string                `json:"strike_period,omitempty"`
 	Markets                []Market               `json:"markets,omitempty"`
-	AvailableOnBrokers     bool                   `json:"available_on_brokers"`
 	ProductMetadata        map[string]interface{} `json:"product_metadata,omitempty"`
 	SettlementSources      []SettlementSource     `json:"settlement_sources,omitempty"`
 	LastUpdatedTs          string                 `json:"last_updated_ts,omitempty"`

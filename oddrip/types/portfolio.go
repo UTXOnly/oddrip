@@ -14,7 +14,8 @@ type GetBalanceResponse struct {
 }
 
 type GetBalanceOpts struct {
-	Subaccount *int
+	Subaccount    *int
+	ExchangeIndex *int
 }
 
 type Fill struct {
@@ -35,6 +36,7 @@ type Fill struct {
 	FeeCost          string `json:"fee_cost"`
 	Ts               *int64 `json:"ts,omitempty"`
 	SubaccountNumber *int   `json:"subaccount_number,omitempty"`
+	ExchangeIndex    *int   `json:"exchange_index,omitempty"`
 }
 
 type GetFillsResponse struct {
@@ -60,6 +62,7 @@ type MarketPosition struct {
 	RealizedPnlDollars    string `json:"realized_pnl_dollars"`
 	FeesPaidDollars       string `json:"fees_paid_dollars"`
 	LastUpdatedTs         string `json:"last_updated_ts"`
+	ExchangeIndex         *int   `json:"exchange_index,omitempty"`
 }
 
 type EventPosition struct {
@@ -170,6 +173,7 @@ type Settlement struct {
 	SettledTime         string `json:"settled_time"`
 	FeeCost             string `json:"fee_cost"`
 	Value               *int   `json:"value,omitempty"`
+	ExchangeIndex       *int   `json:"exchange_index,omitempty"`
 }
 
 type GetSettlementsResponse struct {
@@ -192,4 +196,63 @@ type GetHistoricalPositionsOpts struct {
 	EventTicker string
 	Limit       *int64
 	Cursor      string
+}
+
+const (
+	IntraExchangeInstanceTransferStatusPending  = "pending"
+	IntraExchangeInstanceTransferStatusComplete = "complete"
+
+	ExchangeInstanceEventContract = "event_contract"
+	ExchangeInstanceMargined      = "margined"
+)
+
+// IntraExchangeInstanceTransfer is a balance transfer between exchange
+// instances/shards. Amount is a fixed-point dollar string.
+type IntraExchangeInstanceTransfer struct {
+	TransferID               string `json:"transfer_id"`
+	Source                   string `json:"source"`
+	Destination              string `json:"destination"`
+	SourceExchangeShard      int    `json:"source_exchange_shard"`
+	DestinationExchangeShard int    `json:"destination_exchange_shard"`
+	Amount                   string `json:"amount"`
+	Status                   string `json:"status"`
+	CreatedTs                int64  `json:"created_ts"`
+}
+
+type GetIntraExchangeTransfersResponse struct {
+	Transfers []IntraExchangeInstanceTransfer `json:"transfers"`
+	Cursor    string                          `json:"cursor,omitempty"`
+}
+
+type GetIntraExchangeTransferResponse struct {
+	Transfer IntraExchangeInstanceTransfer `json:"transfer"`
+}
+
+type GetIntraExchangeTransfersOpts struct {
+	Limit  *int64
+	Cursor string
+}
+
+const (
+	RestingMarginReservationMax = "max"
+	RestingMarginReservationSum = "sum"
+)
+
+// TargetBalanceAllocation is the share of balance targeted at one exchange
+// index. Percent is 0-100 and allocations must total 100.
+type TargetBalanceAllocation struct {
+	ExchangeIndex int `json:"exchange_index"`
+	Percent       int `json:"percent"`
+}
+
+type GetTargetBalanceAllocationResponse struct {
+	Allocations []TargetBalanceAllocation `json:"allocations"`
+}
+
+// SetTargetBalanceAllocationRequest replaces the caller's allocation. An empty
+// Allocations slice disables automatic rebalancing. RestingMarginReservation is
+// "max" or "sum" when set.
+type SetTargetBalanceAllocationRequest struct {
+	Allocations              []TargetBalanceAllocation `json:"allocations"`
+	RestingMarginReservation string                    `json:"resting_margin_reservation,omitempty"`
 }

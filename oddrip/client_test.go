@@ -328,7 +328,7 @@ func TestOrders_CancelV2_RequestPathAndQuery(t *testing.T) {
 	sub := 2
 	ex := 1
 
-	_, err := client.Orders.CancelV2(ctx, "o1", &sub, &ex)
+	_, err := client.Orders.CancelV2(ctx, "o1", &types.CancelOrderV2Opts{Subaccount: &sub, ExchangeIndex: &ex, MarketTicker: "TICKER-24JAN01"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -336,7 +336,7 @@ func TestOrders_CancelV2_RequestPathAndQuery(t *testing.T) {
 		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
 	}
 	q := mt.req.URL.Query()
-	if q.Get("subaccount") != "2" || q.Get("exchange_index") != "1" {
+	if q.Get("subaccount") != "2" || q.Get("exchange_index") != "1" || q.Get("market_ticker") != "TICKER-24JAN01" {
 		t.Fatalf("query: %v", q)
 	}
 }
@@ -503,5 +503,182 @@ func TestExchange_GetStatus_IndexFields(t *testing.T) {
 	}
 	if len(got.ExchangeIndexStatuses) != 1 {
 		t.Fatalf("statuses: %+v", got.ExchangeIndexStatuses)
+	}
+}
+
+func TestOrders_CancelAll_RequestPathAndQuery(t *testing.T) {
+	mt := &mockTransport{statusCode: 204, body: nil}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+	sub := 3
+
+	if err := client.Orders.CancelAll(ctx, &types.CancelAllOrdersOpts{Subaccount: &sub}); err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.Method != http.MethodDelete || mt.req.URL.Path != "/trade-api/v2/portfolio/events/orders" {
+		t.Fatalf("request: %v %v", mt.req.Method, mt.req.URL.Path)
+	}
+	if got := mt.req.URL.Query().Get("subaccount"); got != "3" {
+		t.Fatalf("subaccount: %q", got)
+	}
+}
+
+func TestPortfolio_GetBalance_ExchangeIndexQuery(t *testing.T) {
+	body := []byte(`{"balance":1,"balance_dollars":"0.0001","portfolio_value":1,"updated_ts":1}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	idx := 1
+
+	if _, err := client.Portfolio.GetBalance(context.Background(), &types.GetBalanceOpts{ExchangeIndex: &idx}); err != nil {
+		t.Fatal(err)
+	}
+	if got := mt.req.URL.Query().Get("exchange_index"); got != "1" {
+		t.Fatalf("exchange_index: %q", got)
+	}
+}
+
+func TestPortfolio_ListIntraExchangeTransfers_Path(t *testing.T) {
+	body := []byte(`{"transfers":[{"transfer_id":"t1","source":"event_contract","destination":"margined","source_exchange_shard":0,"destination_exchange_shard":1,"amount":"10.0000","status":"pending","created_ts":1716300000}],"cursor":"next"}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	limit := int64(10)
+
+	got, err := client.Portfolio.ListIntraExchangeTransfers(context.Background(), &types.GetIntraExchangeTransfersOpts{Limit: &limit, Cursor: "c1"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/portfolio/intra_exchange_instance_transfers" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	q := mt.req.URL.Query()
+	if q.Get("limit") != "10" || q.Get("cursor") != "c1" {
+		t.Fatalf("query: %v", q)
+	}
+	if len(got.Transfers) != 1 || got.Transfers[0].Status != types.IntraExchangeInstanceTransferStatusPending {
+		t.Fatalf("transfers: %+v", got.Transfers)
+	}
+}
+
+func TestPortfolio_GetIntraExchangeTransfer_Path(t *testing.T) {
+	body := []byte(`{"transfer":{"transfer_id":"t1","source":"event_contract","destination":"margined","source_exchange_shard":0,"destination_exchange_shard":1,"amount":"10.0000","status":"complete","created_ts":1}}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+
+	got, err := client.Portfolio.GetIntraExchangeTransfer(context.Background(), "t1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/portfolio/intra_exchange_instance_transfers/t1" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	if got.Transfer.Amount != "10.0000" {
+		t.Fatalf("transfer: %+v", got.Transfer)
+	}
+}
+
+func TestPortfolio_TargetBalanceAllocation(t *testing.T) {
+	body := []byte(`{"allocations":[{"exchange_index":0,"percent":60},{"exchange_index":1,"percent":40}]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	ctx := context.Background()
+
+	got, err := client.Portfolio.GetTargetBalanceAllocation(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/portfolio/target_balance_allocation" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	if len(got.Allocations) != 2 || got.Allocations[1].Percent != 40 {
+		t.Fatalf("allocations: %+v", got.Allocations)
+	}
+
+	mt2 := &mockTransport{statusCode: 200, body: []byte(`{}`)}
+	client2 := New(HTTPClient(&http.Client{Transport: mt2}))
+	err = client2.Portfolio.SetTargetBalanceAllocation(ctx, &types.SetTargetBalanceAllocationRequest{
+		Allocations:              []types.TargetBalanceAllocation{{ExchangeIndex: 0, Percent: 100}},
+		RestingMarginReservation: types.RestingMarginReservationMax,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt2.req.Method != http.MethodPost || mt2.req.URL.Path != "/trade-api/v2/portfolio/target_balance_allocation" {
+		t.Fatalf("request: %v %v", mt2.req.Method, mt2.req.URL.Path)
+	}
+}
+
+func TestPortfolio_SetTargetBalanceAllocation_PercentValidation(t *testing.T) {
+	mt := &mockTransport{statusCode: 200, body: []byte(`{}`)}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+
+	err := client.Portfolio.SetTargetBalanceAllocation(context.Background(), &types.SetTargetBalanceAllocationRequest{
+		Allocations: []types.TargetBalanceAllocation{{ExchangeIndex: 0, Percent: 60}},
+	})
+	if err == nil {
+		t.Fatal("expected error for allocations that do not total 100")
+	}
+	if mt.req != nil {
+		t.Fatalf("request should not be sent: %v", mt.req.URL)
+	}
+}
+
+func TestLiveData_GetWeatherIndex_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"city":"miami","config_version":"v3","units":"F","timeseries":[{"t":1716300000000,"v":81.25,"status":"ok","contributors":3}]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	from := int64(1716300000000)
+	to := int64(1716303600000)
+	detailed := true
+
+	got, err := client.LiveData.GetWeatherIndex(context.Background(), "miami", &types.GetWeatherIndexOpts{From: &from, To: &to, Detailed: &detailed})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/live_data/weather/miami" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	q := mt.req.URL.Query()
+	if q.Get("from") != "1716300000000" || q.Get("to") != "1716303600000" || q.Get("detailed") != "true" {
+		t.Fatalf("query: %v", q)
+	}
+	if len(got.Timeseries) != 1 || got.Timeseries[0].V == nil || *got.Timeseries[0].V != 81.25 {
+		t.Fatalf("timeseries: %+v", got.Timeseries)
+	}
+}
+
+func TestLiveData_GetWeatherIndexCalibrations_Path(t *testing.T) {
+	body := []byte(`{"city":"miami","units":"F","calibrations":[{"config_version":"v3","effective_at_ms":1716300000000,"city_reference_c":27.5,"stations":[{"station_id":"KMIA","weight":0.5,"offset_c":-0.12}]}]}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+
+	got, err := client.LiveData.GetWeatherIndexCalibrations(context.Background(), "miami")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/live_data/weather/miami/calibrations" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	if len(got.Calibrations) != 1 || got.Calibrations[0].Stations[0].StationID != "KMIA" {
+		t.Fatalf("calibrations: %+v", got.Calibrations)
+	}
+}
+
+func TestLiveData_GetEvent_RequestPathAndQuery(t *testing.T) {
+	body := []byte(`{"live_data":{"type":"weather_observations","details":{"city":"miami"},"default_range":"1h","range_options":["15min","1h"]}}`)
+	mt := &mockTransport{statusCode: 200, body: body}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+
+	got, err := client.LiveData.GetEvent(context.Background(), "KXHIGHMIA-25SEP06", &types.GetEventLiveDataOpts{Range: "1h"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mt.req.URL.Path != "/trade-api/v2/live_data/events/KXHIGHMIA-25SEP06" {
+		t.Fatalf("path: %v", mt.req.URL.Path)
+	}
+	if got := mt.req.URL.Query().Get("range"); got != "1h" {
+		t.Fatalf("range: %q", got)
+	}
+	if got.LiveData.Type != "weather_observations" || string(got.LiveData.Details) != `{"city":"miami"}` {
+		t.Fatalf("live_data: %+v", got.LiveData)
 	}
 }

@@ -2,6 +2,7 @@ package oddrip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -16,6 +17,7 @@ func (s *PortfolioService) GetBalance(ctx context.Context, opts *types.GetBalanc
 	v := url.Values{}
 	if opts != nil {
 		encodeQueryInt(v, "subaccount", opts.Subaccount)
+		encodeQueryInt(v, "exchange_index", opts.ExchangeIndex)
 	}
 	var out types.GetBalanceResponse
 	if err := s.client.get(ctx, joinPath("portfolio", "balance"), v, &out); err != nil {
@@ -148,4 +150,54 @@ func (s *PortfolioService) ListWithdrawals(ctx context.Context, opts *types.GetW
 		return nil, err
 	}
 	return &out, nil
+}
+
+// ListIntraExchangeTransfers returns intra-exchange account transfer history.
+func (s *PortfolioService) ListIntraExchangeTransfers(ctx context.Context, opts *types.GetIntraExchangeTransfersOpts) (*types.GetIntraExchangeTransfersResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetIntraExchangeTransfersResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "intra_exchange_instance_transfers"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetIntraExchangeTransfer returns a single intra-exchange transfer by id.
+func (s *PortfolioService) GetIntraExchangeTransfer(ctx context.Context, transferID string) (*types.GetIntraExchangeTransferResponse, error) {
+	var out types.GetIntraExchangeTransferResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "intra_exchange_instance_transfers", transferID), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetTargetBalanceAllocation returns the caller's target balance allocation
+// across exchange indexes.
+func (s *PortfolioService) GetTargetBalanceAllocation(ctx context.Context) (*types.GetTargetBalanceAllocationResponse, error) {
+	var out types.GetTargetBalanceAllocationResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "target_balance_allocation"), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// SetTargetBalanceAllocation replaces the caller's target balance allocation.
+// Percentages must total 100; an empty Allocations slice disables automatic
+// rebalancing.
+func (s *PortfolioService) SetTargetBalanceAllocation(ctx context.Context, req *types.SetTargetBalanceAllocationRequest) error {
+	if req == nil {
+		return errors.New("request required")
+	}
+	total := 0
+	for _, a := range req.Allocations {
+		total += a.Percent
+	}
+	if len(req.Allocations) > 0 && total != 100 {
+		return fmt.Errorf("allocations must total 100, got %d", total)
+	}
+	return s.client.post(ctx, joinPath("portfolio", "target_balance_allocation"), req, nil)
 }
