@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"sync"
@@ -19,24 +20,33 @@ import (
 const defaultWSHost = "api.elections.kalshi.com"
 const defaultWSPath = "/trade-api/ws/v2"
 
+const (
+	defaultWSBufferSize   = 4096
+	defaultWSPingInterval = 30 * time.Second
+	defaultWSReadTimeout  = 90 * time.Second
+)
+
 var (
-	ErrWSClosed     = errors.New("websocket closed")
+	ErrWSClosed       = errors.New("websocket closed")
 	ErrWSAuthRequired = errors.New("websocket requires auth")
+	ErrWSSlowConsumer = errors.New("websocket consumer too slow")
 )
 
 type WSConn struct {
-	conn     *websocket.Conn
-	auth     AuthProvider
-	host     string
-	path     string
-	nextID   atomic.Int64
-	mu       sync.Mutex
-	closed   bool
-	readErr  error
-	pendMu   sync.Mutex
-	pending  map[int]chan *wsEnvelope
-	msgChan  chan *types.WSMessage
-	readDone chan struct{}
+	conn        *websocket.Conn
+	auth        AuthProvider
+	host        string
+	path        string
+	readTimeout time.Duration
+	nextID      atomic.Int64
+	mu          sync.Mutex
+	closed      bool
+	readErr     error
+	writeMu     sync.Mutex
+	pendMu      sync.Mutex
+	pending     map[int]chan *wsEnvelope
+	msgChan     chan *types.WSMessage
+	readDone    chan struct{}
 }
 
 type wsEnvelope struct {
@@ -50,9 +60,12 @@ type wsEnvelope struct {
 type WSOption func(*wsOpts)
 
 type wsOpts struct {
-	scheme string
-	host  string
-	path  string
+	scheme       string
+	host         string
+	path         string
+	bufferSize   int
+	pingInterval time.Duration
+	readTimeout  time.Duration
 }
 
 func WSScheme(scheme string) WSOption {
@@ -73,16 +86,49 @@ func WSPath(path string) WSOption {
 	}
 }
 
+// WSBufferSize sets the Messages() buffer. If the consumer lets it fill, the
+// connection fails with ErrWSSlowConsumer rather than dropping messages.
+func WSBufferSize(n int) WSOption {
+	return func(o *wsOpts) {
+		o.bufferSize = n
+	}
+}
+
+// WSPingInterval sets how often a keepalive ping is sent. <= 0 disables pings.
+func WSPingInterval(d time.Duration) WSOption {
+	return func(o *wsOpts) {
+		o.pingInterval = d
+	}
+}
+
+// WSReadTimeout fails the connection if nothing (data, ping, or pong) is read
+// for this long. <= 0 disables the read deadline.
+func WSReadTimeout(d time.Duration) WSOption {
+	return func(o *wsOpts) {
+		o.readTimeout = d
+	}
+}
+
 func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, error) {
 	if c.auth == nil {
 		return nil, ErrWSAuthRequired
 	}
-	cfg := wsOpts{scheme: "wss", host: defaultWSHost, path: defaultWSPath}
+	cfg := wsOpts{
+		scheme:       "wss",
+		host:         defaultWSHost,
+		path:         defaultWSPath,
+		bufferSize:   defaultWSBufferSize,
+		pingInterval: defaultWSPingInterval,
+		readTimeout:  defaultWSReadTimeout,
+	}
 	for _, o := range opts {
 		o(&cfg)
 	}
 	if cfg.scheme == "" {
 		cfg.scheme = "wss"
+	}
+	if cfg.bufferSize <= 0 {
+		cfg.bufferSize = defaultWSBufferSize
 	}
 	u := url.URL{Scheme: cfg.scheme, Host: cfg.host, Path: cfg.path}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -100,54 +146,102 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 		return nil, fmt.Errorf("ws dial: %w", err)
 	}
 	ws := &WSConn{
-		conn:     conn,
-		auth:     c.auth,
-		host:     cfg.host,
-		path:     cfg.path,
-		pending:  make(map[int]chan *wsEnvelope),
-		msgChan:  make(chan *types.WSMessage, 256),
-		readDone: make(chan struct{}),
+		conn:        conn,
+		auth:        c.auth,
+		host:        cfg.host,
+		path:        cfg.path,
+		readTimeout: cfg.readTimeout,
+		pending:     make(map[int]chan *wsEnvelope),
+		msgChan:     make(chan *types.WSMessage, cfg.bufferSize),
+		readDone:    make(chan struct{}),
 	}
 	ws.nextID.Store(1)
+	ws.resetDeadline()
+	conn.SetPongHandler(func(string) error {
+		ws.resetDeadline()
+		return nil
+	})
+	conn.SetPingHandler(func(data string) error {
+		ws.resetDeadline()
+		err := conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(time.Second))
+		var ne net.Error
+		if errors.Is(err, websocket.ErrCloseSent) || errors.As(err, &ne) {
+			return nil
+		}
+		return err
+	})
 	go ws.readLoop()
+	if cfg.pingInterval > 0 {
+		go ws.keepalive(cfg.pingInterval)
+	}
 	return ws, nil
+}
+
+func (ws *WSConn) resetDeadline() {
+	if ws.readTimeout > 0 {
+		ws.conn.SetReadDeadline(time.Now().Add(ws.readTimeout))
+	}
+}
+
+func (ws *WSConn) setErr(err error) {
+	ws.mu.Lock()
+	if ws.readErr == nil {
+		ws.readErr = err
+	}
+	ws.mu.Unlock()
+}
+
+func (ws *WSConn) keepalive(interval time.Duration) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ws.readDone:
+			return
+		case <-t.C:
+			ws.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second))
+		}
+	}
 }
 
 func (ws *WSConn) readLoop() {
 	defer close(ws.readDone)
 	defer close(ws.msgChan)
+	defer ws.drainPending()
 	for {
 		_, data, err := ws.conn.ReadMessage()
 		if err != nil {
-			ws.mu.Lock()
-			ws.readErr = err
-			ws.mu.Unlock()
-			ws.drainPending(err)
+			ws.setErr(err)
 			return
 		}
+		ws.resetDeadline()
 		var env wsEnvelope
 		if err := json.Unmarshal(data, &env); err != nil {
 			continue
 		}
-		ws.pendMu.Lock()
-		ch, ok := ws.pending[env.ID]
-		delete(ws.pending, env.ID)
-		ws.pendMu.Unlock()
-		if ok && ch != nil {
-			select {
-			case ch <- &env:
-			default:
+		if env.ID != 0 {
+			ws.pendMu.Lock()
+			ch := ws.pending[env.ID]
+			ws.pendMu.Unlock()
+			if ch != nil {
+				select {
+				case ch <- &env:
+				default:
+				}
 			}
 		}
 		msg := &types.WSMessage{Type: env.Type, SID: env.SID, Seq: env.Seq, Msg: env.Msg}
 		select {
 		case ws.msgChan <- msg:
 		default:
+			ws.setErr(ErrWSSlowConsumer)
+			ws.conn.Close()
+			return
 		}
 	}
 }
 
-func (ws *WSConn) drainPending(err error) {
+func (ws *WSConn) drainPending() {
 	ws.pendMu.Lock()
 	for _, ch := range ws.pending {
 		close(ch)
@@ -166,11 +260,12 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 		return nil, err
 	}
 	ws.mu.Lock()
-	if ws.closed {
+	if ws.readErr != nil {
+		err := ws.readErr
 		ws.mu.Unlock()
-		return nil, ErrWSClosed
+		return nil, err
 	}
-	ch := make(chan *wsEnvelope, 8)
+	ch := make(chan *wsEnvelope, max(expectCount, 1))
 	ws.pendMu.Lock()
 	ws.pending[id] = ch
 	ws.pendMu.Unlock()
@@ -181,7 +276,13 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 		ws.pendMu.Unlock()
 	}()
 
-	if err := ws.conn.WriteMessage(websocket.TextMessage, data); err != nil {
+	ws.writeMu.Lock()
+	err = ws.conn.WriteMessage(websocket.TextMessage, data)
+	ws.writeMu.Unlock()
+	if err != nil {
+		if e := ws.Err(); e != nil {
+			return nil, e
+		}
 		return nil, err
 	}
 	var out []*wsEnvelope
@@ -189,15 +290,11 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
+		case <-ws.readDone:
+			return nil, ws.closedErr()
 		case env, ok := <-ch:
 			if !ok {
-				ws.mu.Lock()
-				e := ws.readErr
-				ws.mu.Unlock()
-				if e != nil {
-					return nil, e
-				}
-				return nil, ErrWSClosed
+				return nil, ws.closedErr()
 			}
 			if env.Type == "error" {
 				var errMsg types.ErrorMsg
@@ -212,6 +309,13 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 			}
 		}
 	}
+}
+
+func (ws *WSConn) closedErr() error {
+	if err := ws.Err(); err != nil {
+		return err
+	}
+	return ErrWSClosed
 }
 
 func (ws *WSConn) Subscribe(ctx context.Context, params types.SubscribeParams) ([]types.SubscribedResponse, error) {
@@ -317,6 +421,19 @@ func (ws *WSConn) Messages() <-chan *types.WSMessage {
 	return ws.msgChan
 }
 
+// Done is closed once the read loop has exited; Messages() is closed by then.
+func (ws *WSConn) Done() <-chan struct{} {
+	return ws.readDone
+}
+
+// Err is nil while the connection is healthy. After the read loop exits it is
+// the terminal read error, ErrWSSlowConsumer, or ErrWSClosed after Close().
+func (ws *WSConn) Err() error {
+	ws.mu.Lock()
+	defer ws.mu.Unlock()
+	return ws.readErr
+}
+
 func (ws *WSConn) Close() error {
 	ws.mu.Lock()
 	if ws.closed {
@@ -324,11 +441,22 @@ func (ws *WSConn) Close() error {
 		return nil
 	}
 	ws.closed = true
+	healthy := ws.readErr == nil
+	if healthy {
+		ws.readErr = ErrWSClosed
+	}
+	ws.mu.Unlock()
+	if !healthy {
+		ws.conn.Close()
+		<-ws.readDone
+		return nil
+	}
+	ws.writeMu.Lock()
 	err := ws.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
+	ws.writeMu.Unlock()
 	if e := ws.conn.Close(); e != nil && err == nil {
 		err = e
 	}
-	ws.mu.Unlock()
 	select {
 	case <-ws.readDone:
 		return err
