@@ -2,9 +2,25 @@
 
 All notable changes to this project are documented here. The client tracks [Kalshi’s API changelog](https://docs.kalshi.com/changelog); repository root `openapi.yaml` / `asyncapi.yaml` are the source of truth for shapes and endpoints.
 
+**Versioning.** The module follows semver. While it is at major version 0, a **minor** release may contain breaking changes; when it does, they are listed first under a `### Breaking` heading with migration notes, and CI refuses a release that has API-incompatible changes (per `gorelease`) without that section, or that has one on a patch bump. Patch releases never break. From v1.0.0 on, breaking changes require a major bump.
+
 ## [0.6.0] — 2026-09-11
 
 Audit release. Every item under **Fixed** was reproduced with a failing test before the fix; the shipped test suite now exercises retry exhaustion, context cancellation during backoff, multi-channel subscribes, concurrent WebSocket writes, slow consumers, and dead connections.
+
+### Breaking
+
+One source-incompatible API change (the only one `gorelease -base=v0.5.0` reports) and two behavioral changes that a consumer must account for.
+
+- **`DoConcurrent` signature.** `DoConcurrent(ctx, n, fn)` is now `DoConcurrent(ctx, n, maxInFlight, fn)`. The old function was documented as bounded but ran all `n` calls at once; the new argument makes it true. Migrate by inserting a limit — `0` reproduces the old unbounded behavior exactly:
+  ```go
+  // before
+  oddrip.DoConcurrent(ctx, len(tickers), fn)
+  // after
+  oddrip.DoConcurrent(ctx, len(tickers), 8, fn) // or 0 for unbounded
+  ```
+- **WebSocket slow consumer now closes the connection.** Previously, if the reader of `Messages()` fell more than 256 messages behind, messages were dropped with no signal. Now the buffer is 4096 (`WSBufferSize`) and on overflow the connection fails with `ErrWSSlowConsumer`, `Messages()` closes, and `Err()` reports why. A consumer that tolerated silent gaps must now reconnect (and re-snapshot any local book) when `Messages()` closes. Consumers that already treat a closed `Messages()` as a disconnect need no change.
+- **WebSocket read deadline.** Connections now enforce `WSReadTimeout` (default 90s, extended by every frame including keepalive pongs). A half-open socket that previously left `Messages()` open forever now closes it with a timeout error in `Err()`. Live connections are unaffected — the client pings every `WSPingInterval` (30s), so an idle-but-healthy subscription stays up. Pass `WSReadTimeout(0)` / `WSPingInterval(0)` to restore the old behavior.
 
 ### Fixed
 

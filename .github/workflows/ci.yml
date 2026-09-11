@@ -93,8 +93,53 @@ jobs:
             else
               echo "v$version already released"
             fi
+            echo "released=true" >> "$GITHUB_ENV"
           else
             echo "v$version is unreleased; merging to main will tag and publish it"
+            echo "released=false" >> "$GITHUB_ENV"
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v7
+        if: env.released == 'false'
+        with:
+          go-version: stable
+      - name: breaking changes are declared and the bump matches
+        if: env.released == 'false'
+        run: |
+          set -euo pipefail
+          prev=$(git tag -l 'v*' | sort -V | tail -1)
+          [ -n "$prev" ] || { echo "no previous tag; skipping"; exit 0; }
+          echo "previous release: $prev"
+
+          [ "$(printf '%s\n' "${prev#v}" "$version" | sort -V | tail -1)" = "$version" ] && [ "${prev#v}" != "$version" ] \
+            || { echo "::error::oddrip.Version $version is not greater than latest tag $prev"; exit 1; }
+
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" { on=1; next } on && /^## \[/ { exit } on { print }' CHANGELOG.md > section.md
+          declared=false; grep -q '^### Breaking' section.md && declared=true
+
+          go run golang.org/x/exp/cmd/gorelease@latest -base="$prev" -version="v$version" > gorelease.txt 2>&1 || true
+          { echo "## gorelease $prev → v$version"; echo; echo '```'; cat gorelease.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat gorelease.txt
+          grep -q '^# summary' gorelease.txt || { echo "::error::gorelease did not complete; refusing to pass without an API diff"; exit 1; }
+
+          api_breaks=$(awk '/^## incompatible changes/{on=1; next} /^## /{on=0} on && NF && !/^Version: value changed/' gorelease.txt || true)
+          if [ -n "$api_breaks" ] && [ "$declared" = false ]; then
+            echo "::error::gorelease found API-incompatible changes but the $version CHANGELOG section has no '### Breaking' heading:"
+            echo "$api_breaks"
+            exit 1
+          fi
+
+          IFS=. read -r pmaj pmin _ <<< "${prev#v}"
+          IFS=. read -r cmaj cmin _ <<< "$version"
+          if [ "$declared" = true ]; then
+            if [ "$cmaj" -eq 0 ] && [ "$pmaj" -eq 0 ]; then
+              [ "$cmin" -gt "$pmin" ] || { echo "::error::$version declares breaking changes but does not bump the minor version from $prev (v0 policy)"; exit 1; }
+            else
+              [ "$cmaj" -gt "$pmaj" ] || { echo "::error::$version declares breaking changes but does not bump the major version from $prev"; exit 1; }
+            fi
+            echo "breaking changes declared; bump from $prev to v$version is acceptable"
+          else
+            echo "no breaking changes declared or detected"
           fi
 
   release:
