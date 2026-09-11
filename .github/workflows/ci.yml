@@ -114,15 +114,15 @@ jobs:
           [ "$(printf '%s\n' "${prev#v}" "$version" | sort -V | tail -1)" = "$version" ] && [ "${prev#v}" != "$version" ] \
             || { echo "::error::oddrip.Version $version is not greater than latest tag $prev"; exit 1; }
 
-          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" { on=1; next } on && /^## \[/ { exit } on { print }' CHANGELOG.md > section.md
-          declared=false; grep -q '^### Breaking' section.md && declared=true
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" { on=1; next } on && /^## \[/ { exit } on { print }' CHANGELOG.md > "$RUNNER_TEMP/section.md"
+          declared=false; grep -q '^### Breaking' "$RUNNER_TEMP/section.md" && declared=true
 
-          go run golang.org/x/exp/cmd/gorelease@latest -base="$prev" -version="v$version" > gorelease.txt 2>&1 || true
-          { echo "## gorelease $prev → v$version"; echo; echo '```'; cat gorelease.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          cat gorelease.txt
-          grep -q '^# summary' gorelease.txt || { echo "::error::gorelease did not complete; refusing to pass without an API diff"; exit 1; }
+          go run golang.org/x/exp/cmd/gorelease@latest -base="$prev" -version="v$version" > "$RUNNER_TEMP/gorelease.txt" 2>&1 || true
+          { echo "## gorelease $prev → v$version"; echo; echo '```'; cat "$RUNNER_TEMP/gorelease.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/gorelease.txt"
+          grep -q '^# summary' "$RUNNER_TEMP/gorelease.txt" || { echo "::error::gorelease did not complete; refusing to pass without an API diff"; exit 1; }
 
-          api_breaks=$(awk '/^## incompatible changes/{on=1; next} /^## /{on=0} on && NF && !/^Version: value changed/' gorelease.txt || true)
+          api_breaks=$(awk '/^## incompatible changes/{on=1; next} /^## /{on=0} on && NF && !/^Version: value changed/' "$RUNNER_TEMP/gorelease.txt" || true)
           if [ -n "$api_breaks" ] && [ "$declared" = false ]; then
             echo "::error::gorelease found API-incompatible changes but the $version CHANGELOG section has no '### Breaking' heading:"
             echo "$api_breaks"
