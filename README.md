@@ -235,3 +235,5 @@ Releases are cut by merging to `main`. To ship a version:
 3. Update the `@vX.Y.Z` pin in this README.
 
 When the merge lands and all checks pass, the `release` job tags `vX.Y.Z`, publishes a GitHub Release with the CHANGELOG section, and warms `proxy.golang.org`. A merge whose version is already tagged (docs-only changes) is a no-op.
+
+**Versioning.** Semver. While the module is at v0, a minor release may contain breaking changes; they are always listed first under `### Breaking` in the CHANGELOG with migration notes. CI runs `gorelease` against the previous tag and refuses a release that has API-incompatible changes without that section, or that declares one on a patch bump. Patch releases never break. Behavioral changes that `gorelease` cannot see (e.g. a connection now closing where it used to hang) are declared under the same heading.
