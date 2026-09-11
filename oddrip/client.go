@@ -32,13 +32,16 @@ type Client struct {
 	auth       AuthProvider
 	retry      retry.Config
 
-	Exchange  *ExchangeService
-	Markets   *MarketsService
-	Orders    *OrdersService
-	Portfolio *PortfolioService
-	Account   *AccountService
-	Events    *EventsService
-	LiveData  *LiveDataService
+	Exchange    *ExchangeService
+	Markets     *MarketsService
+	Orders      *OrdersService
+	Portfolio   *PortfolioService
+	Account     *AccountService
+	Events      *EventsService
+	LiveData    *LiveDataService
+	Series      *SeriesService
+	OrderGroups *OrderGroupsService
+	Subaccounts *SubaccountsService
 }
 
 type Option func(*Client)
@@ -95,6 +98,9 @@ func New(opts ...Option) *Client {
 	c.Account = &AccountService{client: c}
 	c.Events = &EventsService{client: c}
 	c.LiveData = &LiveDataService{client: c}
+	c.Series = &SeriesService{client: c}
+	c.OrderGroups = &OrderGroupsService{client: c}
+	c.Subaccounts = &SubaccountsService{client: c}
 	return c
 }
 
