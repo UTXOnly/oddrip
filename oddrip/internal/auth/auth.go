@@ -10,26 +10,8 @@ type Provider interface {
 	Apply(req *http.Request) error
 }
 
-type StaticHeaders struct {
-	Headers http.Header
-}
-
-func (s *StaticHeaders) Apply(req *http.Request) error {
-	for k, v := range s.Headers {
-		req.Header[k] = v
-	}
-	return nil
-}
-
-type BearerToken string
-
-func (b BearerToken) Apply(req *http.Request) error {
-	req.Header.Set("Authorization", "Bearer "+string(b))
-	return nil
-}
-
 type KalshiSigner struct {
-	KeyID      string
+	KeyID       string
 	SignRequest func(method, path string, timestamp int64) (signature string, err error)
 }
 
