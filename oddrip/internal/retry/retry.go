@@ -7,8 +7,6 @@ import (
 	"net/http"
 	"strconv"
 	"time"
-
-	"github.com/UTXOnly/oddrip/oddrip/internal/errors"
 )
 
 type Config struct {
@@ -46,37 +44,66 @@ func (c Config) Delay(attempt int, retryAfter time.Duration) time.Duration {
 	return d
 }
 
+func IsRetryable(statusCode int) bool {
+	return statusCode == 429 || (statusCode >= 500 && statusCode < 600)
+}
+
+// Do never returns (nil, nil). When every attempt yields a retryable status
+// the last response is returned with its body open so the caller can parse it.
 func Do(ctx context.Context, cfg Config, fn func() (*http.Response, error)) (*http.Response, error) {
-	var lastErr error
-	for attempt := 0; attempt < cfg.MaxAttempts; attempt++ {
+	attempts := cfg.MaxAttempts
+	if attempts < 1 {
+		attempts = 1
+	}
+	for attempt := 0; ; attempt++ {
 		resp, err := fn()
+		last := attempt == attempts-1
+		var retryAfter time.Duration
 		if err != nil {
-			lastErr = err
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if attempt < cfg.MaxAttempts-1 {
-				time.Sleep(cfg.Delay(attempt, 0))
+			if last {
+				return nil, err
 			}
-			continue
-		}
-		if resp.StatusCode < 400 || !errors.IsRetryable(resp.StatusCode) {
-			return resp, nil
-		}
-		var retryAfter time.Duration
-		if s := resp.Header.Get("Retry-After"); s != "" {
-			if sec, err := strconv.Atoi(s); err == nil {
-				retryAfter = time.Duration(sec) * time.Second
+		} else {
+			if last || !IsRetryable(resp.StatusCode) {
+				return resp, nil
 			}
+			retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+			resp.Body.Close()
 		}
-		resp.Body.Close()
-		if attempt == cfg.MaxAttempts-1 {
-			return nil, lastErr
+		if err := wait(ctx, cfg.Delay(attempt, retryAfter)); err != nil {
+			return nil, err
 		}
-		if ctx.Err() != nil {
-			return nil, ctx.Err()
-		}
-		time.Sleep(cfg.Delay(attempt, retryAfter))
 	}
-	return nil, lastErr
+}
+
+func parseRetryAfter(s string) time.Duration {
+	if s == "" {
+		return 0
+	}
+	if sec, err := strconv.Atoi(s); err == nil {
+		return time.Duration(sec) * time.Second
+	}
+	if t, err := http.ParseTime(s); err == nil {
+		if d := time.Until(t); d > 0 {
+			return d
+		}
+	}
+	return 0
+}
+
+func wait(ctx context.Context, d time.Duration) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }

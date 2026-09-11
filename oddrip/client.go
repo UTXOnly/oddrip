@@ -12,9 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/UTXOnly/oddrip/oddrip/internal/errors"
 	"github.com/UTXOnly/oddrip/oddrip/internal/retry"
-	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
 const defaultBaseURL = "https://api.elections.kalshi.com/trade-api/v2"
@@ -79,9 +77,9 @@ func New(opts ...Option) *Client {
 			Transport: &http.Transport{
 				MaxIdleConns:        100,
 				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90e9,
+				IdleConnTimeout:     90 * time.Second,
 			},
-			Timeout: 30e9,
+			Timeout: 30 * time.Second,
 		},
 		retry: retry.DefaultConfig,
 	}
@@ -113,8 +111,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		u += "?" + query.Encode()
 	}
 
-	var resp *http.Response
-	resp, doErr := retry.Do(ctx, c.retry, func() (*http.Response, error) {
+	resp, err := retry.Do(ctx, c.retry, func() (*http.Response, error) {
 		var bodyReader io.Reader
 		if len(bodyBytes) > 0 {
 			bodyReader = bytes.NewReader(bodyBytes)
@@ -134,23 +131,13 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		}
 		return c.httpClient.Do(req)
 	})
-	if doErr != nil {
-		return doErr
+	if err != nil {
+		return err
 	}
 	defer resp.Body.Close()
 
-	requestID := resp.Header.Get("Request-Id")
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		apiErr := errors.ParseResponseError(resp.StatusCode, resp.Body, requestID)
-		dec := json.NewDecoder(strings.NewReader(apiErr.RawBody))
-		var er types.ErrorResponse
-		if dec.Decode(&er) == nil {
-			apiErr.Code = er.Code
-			apiErr.Message = er.Message
-			apiErr.Details = er.Details
-			apiErr.Service = er.Service
-		}
-		return wrapAPIError(apiErr)
+		return newAPIError(resp)
 	}
 
 	if out != nil {
