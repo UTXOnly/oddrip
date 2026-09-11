@@ -6,7 +6,10 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/UTXOnly/oddrip/oddrip/types"
 )
@@ -680,5 +683,53 @@ func TestLiveData_GetEvent_RequestPathAndQuery(t *testing.T) {
 	}
 	if got.LiveData.Type != "weather_observations" || string(got.LiveData.Details) != `{"city":"miami"}` {
 		t.Fatalf("live_data: %+v", got.LiveData)
+	}
+}
+
+func TestClient_RetryExhaustedReturnsAPIError(t *testing.T) {
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusTooManyRequests)
+		w.Write([]byte(`{"code":"rate_limited","message":"slow down"}`))
+	}))
+	defer srv.Close()
+	client := New(BaseURL(srv.URL), RetryConfigOption(RetryConfig{
+		MaxAttempts:  2,
+		InitialDelay: time.Millisecond,
+		MaxDelay:     time.Millisecond,
+	}))
+
+	_, err := client.Exchange.GetStatus(context.Background())
+	var apiErr *APIError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected *APIError, got %T: %v", err, err)
+	}
+	if apiErr.StatusCode != 429 || apiErr.Code != "rate_limited" || apiErr.Message != "slow down" {
+		t.Fatalf("APIError: %+v", apiErr)
+	}
+	if n := atomic.LoadInt32(&calls); n != 2 {
+		t.Fatalf("calls: %d", n)
+	}
+}
+
+func TestClient_RetryWaitHonorsContext(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Retry-After", "5")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer srv.Close()
+	client := New(BaseURL(srv.URL))
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := client.Exchange.GetStatus(ctx)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 200*time.Millisecond {
+		t.Fatalf("took %v", elapsed)
 	}
 }

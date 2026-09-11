@@ -1,10 +1,16 @@
 package oddrip
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 
-	"github.com/UTXOnly/oddrip/oddrip/internal/errors"
+	"github.com/UTXOnly/oddrip/oddrip/types"
 )
+
+const maxBodySnippet = 512
 
 type APIError struct {
 	StatusCode int
@@ -23,17 +29,16 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("api error %d", e.StatusCode)
 }
 
-func wrapAPIError(e *errors.APIError) *APIError {
-	if e == nil {
-		return nil
+func newAPIError(resp *http.Response) *APIError {
+	e := &APIError{StatusCode: resp.StatusCode, RequestID: resp.Header.Get("Request-Id")}
+	buf, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySnippet))
+	e.RawBody = string(buf)
+	var er types.ErrorResponse
+	if json.NewDecoder(bytes.NewReader(buf)).Decode(&er) == nil {
+		e.Code = er.Code
+		e.Message = er.Message
+		e.Details = er.Details
+		e.Service = er.Service
 	}
-	return &APIError{
-		StatusCode: e.StatusCode,
-		Code:       e.Code,
-		Message:    e.Message,
-		Details:    e.Details,
-		Service:    e.Service,
-		RequestID:  e.RequestID,
-		RawBody:    e.RawBody,
-	}
+	return e
 }
