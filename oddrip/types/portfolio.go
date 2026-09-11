@@ -256,3 +256,10 @@ type SetTargetBalanceAllocationRequest struct {
 	Allocations              []TargetBalanceAllocation `json:"allocations"`
 	RestingMarginReservation string                    `json:"resting_margin_reservation,omitempty"`
 }
+
+// GetPortfolioRestingOrderTotalValueResponse: TotalRestingOrderValue is in
+// cents; the breakdown balances are fixed-point dollar strings.
+type GetPortfolioRestingOrderTotalValueResponse struct {
+	TotalRestingOrderValue     int64            `json:"total_resting_order_value"`
+	RestingOrderValueBreakdown []IndexedBalance `json:"resting_order_value_breakdown"`
+}

@@ -2,6 +2,7 @@ package oddrip
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/url"
 
@@ -144,6 +145,28 @@ func (s *MarketsService) GetHistoricalCandlesticks(ctx context.Context, ticker s
 	v.Set("period_interval", fmt.Sprintf("%d", opts.PeriodInterval))
 	var out types.GetMarketCandlesticksHistoricalResponse
 	if err := s.client.get(ctx, joinPath("historical", "markets", ticker, "candlesticks"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// GetCandlesticks fetches candlesticks for up to 100 comma-separated market
+// tickers in one request.
+func (s *MarketsService) GetCandlesticks(ctx context.Context, opts *types.BatchGetMarketCandlesticksOpts) (*types.BatchGetMarketCandlesticksResponse, error) {
+	if opts == nil || opts.MarketTickers == "" {
+		return nil, errors.New("market_tickers required")
+	}
+	if opts.PeriodInterval < 1 {
+		return nil, errors.New("period_interval must be >= 1")
+	}
+	v := url.Values{}
+	v.Set("market_tickers", opts.MarketTickers)
+	v.Set("start_ts", fmt.Sprintf("%d", opts.StartTs))
+	v.Set("end_ts", fmt.Sprintf("%d", opts.EndTs))
+	v.Set("period_interval", fmt.Sprintf("%d", opts.PeriodInterval))
+	encodeQueryBool(v, "include_latest_before_start", opts.IncludeLatestBeforeStart)
+	var out types.BatchGetMarketCandlesticksResponse
+	if err := s.client.get(ctx, joinPath("markets", "candlesticks"), v, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

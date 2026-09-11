@@ -93,3 +93,69 @@ type GetEventMetadataResponse struct {
 	Competition      *string            `json:"competition,omitempty"`
 	CompetitionScope *string            `json:"competition_scope,omitempty"`
 }
+
+const (
+	CollectionStatusUnopened = "unopened"
+	CollectionStatusOpen     = "open"
+	CollectionStatusClosed   = "closed"
+)
+
+type AssociatedEvent struct {
+	Ticker        string   `json:"ticker"`
+	IsYesOnly     bool     `json:"is_yes_only"`
+	SizeMax       *int     `json:"size_max,omitempty"`
+	SizeMin       *int     `json:"size_min,omitempty"`
+	ActiveQuoters []string `json:"active_quoters"`
+}
+
+type MultivariateEventCollection struct {
+	CollectionTicker       string            `json:"collection_ticker"`
+	SeriesTicker           string            `json:"series_ticker"`
+	ExchangeIndex          int               `json:"exchange_index,omitempty"`
+	Title                  string            `json:"title"`
+	Description            string            `json:"description"`
+	OpenDate               string            `json:"open_date"`
+	CloseDate              string            `json:"close_date"`
+	AssociatedEvents       []AssociatedEvent `json:"associated_events"`
+	AssociatedEventTickers []string          `json:"associated_event_tickers"`
+	IsOrdered              bool              `json:"is_ordered"`
+	IsSingleMarketPerEvent bool              `json:"is_single_market_per_event"`
+	IsAllYes               bool              `json:"is_all_yes"`
+	SizeMin                int               `json:"size_min"`
+	SizeMax                int               `json:"size_max"`
+	FunctionalDescription  string            `json:"functional_description"`
+}
+
+type GetMultivariateEventCollectionResponse struct {
+	MultivariateContract MultivariateEventCollection `json:"multivariate_contract"`
+}
+
+type GetMultivariateEventCollectionsResponse struct {
+	MultivariateContracts []MultivariateEventCollection `json:"multivariate_contracts"`
+	Cursor                string                        `json:"cursor,omitempty"`
+}
+
+type GetMultivariateEventCollectionsOpts struct {
+	Status                string
+	AssociatedEventTicker string
+	SeriesTicker          string
+	Limit                 *int64
+	Cursor                string
+}
+
+type TickerPair struct {
+	MarketTicker string `json:"market_ticker"`
+	EventTicker  string `json:"event_ticker"`
+	Side         string `json:"side"`
+}
+
+type CreateMarketInMultivariateEventCollectionRequest struct {
+	SelectedMarkets   []TickerPair `json:"selected_markets"`
+	WithMarketPayload *bool        `json:"with_market_payload,omitempty"`
+}
+
+type CreateMarketInMultivariateEventCollectionResponse struct {
+	EventTicker  string  `json:"event_ticker"`
+	MarketTicker string  `json:"market_ticker"`
+	Market       *Market `json:"market,omitempty"`
+}
