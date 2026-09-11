@@ -1,4 +1,4 @@
 package oddrip
 
-// Version is the semantic version of this module (aligned with git tags v0.6.0, etc.).
+// Version is the module release. CI tags v<Version> and publishes a release when main carries a version that is not yet tagged.
 const Version = "0.6.0"

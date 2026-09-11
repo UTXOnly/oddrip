@@ -34,8 +34,8 @@ func main() {
 		oddrip.BaseURL(baseURL),
 		oddrip.HTTPClient(&http.Client{
 			Transport: &loggingTransport{
-				base:   http.DefaultTransport,
-				log:    logFile,
+				base:    http.DefaultTransport,
+				log:     logFile,
 				baseURL: baseURL,
 			},
 			Timeout: 30 * time.Second,
@@ -61,9 +61,9 @@ func main() {
 			if sig != "" && ts != "" {
 				opts = append(opts, oddrip.Auth(&oddrip.StaticHeaders{
 					Headers: map[string][]string{
-						"KALSHI-ACCESS-KEY":        {keyID},
-						"KALSHI-ACCESS-SIGNATURE":  {sig},
-						"KALSHI-ACCESS-TIMESTAMP":  {ts},
+						"KALSHI-ACCESS-KEY":       {keyID},
+						"KALSHI-ACCESS-SIGNATURE": {sig},
+						"KALSHI-ACCESS-TIMESTAMP": {ts},
 					},
 				}))
 				hasAuth = true
@@ -138,7 +138,9 @@ func runAll(ctx context.Context, client *oddrip.Client, log io.Writer) {
 	logCall("Exchange.GetSeriesFeeChanges (KXBTC, historical)", func() { client.Exchange.GetSeriesFeeChanges(ctx, "KXBTC", true) })
 
 	logCall("Markets.List (limit=5)", func() { client.Markets.List(ctx, &types.GetMarketsOpts{Limit: &limit5}) })
-	logCall("Markets.List (limit=10, status=open)", func() { client.Markets.List(ctx, &types.GetMarketsOpts{Limit: &limit10, Status: types.MarketStatusOpen}) })
+	logCall("Markets.List (limit=10, status=open)", func() {
+		client.Markets.List(ctx, &types.GetMarketsOpts{Limit: &limit10, Status: types.MarketStatusOpen})
+	})
 	logCall("Markets.List (limit=3, event_ticker=KXBTC)", func() { client.Markets.List(ctx, &types.GetMarketsOpts{Limit: &limit3, EventTicker: "KXBTC"}) })
 	var markets *types.GetMarketsResponse
 	logCall("Markets.List (limit=5, for follow-up)", func() {
@@ -173,12 +175,18 @@ func runAll(ctx context.Context, client *oddrip.Client, log io.Writer) {
 		logCall("Events.GetMetadata "+eventTicker, func() { client.Events.GetMetadata(ctx, eventTicker) })
 	}
 	logCall("Events.ListMultivariate (limit=3)", func() { client.Events.ListMultivariate(ctx, &types.GetMultivariateEventsOpts{Limit: &limit3}) })
-	logCall("Events.ListMultivariate (limit=3, with_nested_markets=true)", func() { client.Events.ListMultivariate(ctx, &types.GetMultivariateEventsOpts{Limit: &limit3, WithNestedMarkets: &nestedTrue}) })
+	logCall("Events.ListMultivariate (limit=3, with_nested_markets=true)", func() {
+		client.Events.ListMultivariate(ctx, &types.GetMultivariateEventsOpts{Limit: &limit3, WithNestedMarkets: &nestedTrue})
+	})
 
 	logCall("Orders.List (no opts)", func() { client.Orders.List(ctx, nil) })
 	logCall("Orders.List (limit=5)", func() { client.Orders.List(ctx, &types.GetOrdersOpts{Limit: &limit5}) })
-	logCall("Orders.List (status=resting, limit=5)", func() { client.Orders.List(ctx, &types.GetOrdersOpts{Status: types.OrderStatusResting, Limit: &limit5}) })
-	logCall("Orders.List (status=executed, limit=3)", func() { client.Orders.List(ctx, &types.GetOrdersOpts{Status: types.OrderStatusExecuted, Limit: &limit3}) })
+	logCall("Orders.List (status=resting, limit=5)", func() {
+		client.Orders.List(ctx, &types.GetOrdersOpts{Status: types.OrderStatusResting, Limit: &limit5})
+	})
+	logCall("Orders.List (status=executed, limit=3)", func() {
+		client.Orders.List(ctx, &types.GetOrdersOpts{Status: types.OrderStatusExecuted, Limit: &limit3})
+	})
 	var ordersResp *types.GetOrdersResponse
 	logCall("Orders.List (limit=5, for follow-up)", func() {
 		ordersResp, _ = client.Orders.List(ctx, &types.GetOrdersOpts{Limit: &limit5})
@@ -254,5 +262,3 @@ func runLiveOrder(ctx context.Context, client *oddrip.Client, log io.Writer) {
 	_, _ = client.Orders.CancelV2(ctx, createResp2.OrderID, nil)
 	fmt.Fprintf(log, "Orders.CancelV2 called on second order. First order (%s) remains resting.\n\n", createResp.OrderID)
 }
-
-func ptr[T any](v T) *T { return &v }

@@ -50,9 +50,9 @@ func main() {
 			if sig != "" && ts != "" {
 				opts = append(opts, oddrip.Auth(&oddrip.StaticHeaders{
 					Headers: map[string][]string{
-						"KALSHI-ACCESS-KEY":        {keyID},
-						"KALSHI-ACCESS-SIGNATURE":  {sig},
-						"KALSHI-ACCESS-TIMESTAMP":  {ts},
+						"KALSHI-ACCESS-KEY":       {keyID},
+						"KALSHI-ACCESS-SIGNATURE": {sig},
+						"KALSHI-ACCESS-TIMESTAMP": {ts},
 					},
 				}))
 			}

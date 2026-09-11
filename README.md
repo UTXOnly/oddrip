@@ -1,10 +1,12 @@
 # Oddrip
 
+[![CI](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/UTXOnly/oddrip/oddrip.svg)](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip)
+
 Go client for the [Kalshi Trade API](https://docs.kalshi.com/openapi.yaml): REST for orders, portfolio, markets, events, and exchange info, plus WebSocket for real-time market data (ticker, orderbook, trades, fills, and related channels). One library, same auth; use REST to trade and WebSocket to stream.
 
 REST coverage: **Exchange** (status, schedule, user_data_timestamp, historical cutoff, series fee changes), **Markets** (list, get, orderbook, **orderbooks**, trades, **historical** list/get/trades/candlesticks), **Events** (list, list multivariate, get, get metadata per [Get Events](https://docs.kalshi.com/api-reference/events/get-events)), **Orders** (list, get, queue positions, **V2 event orders** create/cancel/cancel-all/amend/decrease/batch), **Portfolio** (balance, fills, positions, **settlements**, **deposits**, **withdrawals**, **intra-exchange transfers**, **target balance allocation**, **historical** fills/orders/positions), **Account** (API limits, **endpoint costs**), **Live data** (**weather index** and calibrations, event live data), **Series** (list, get, per-series **market and event candlesticks**, forecast percentile history), **Order groups** (list/create/get/delete/reset/trigger/limit), **Subaccounts** (create, balances, transfer, transfer history, netting). Also `Markets.GetCandlesticks` (batch), `Portfolio.GetTotalRestingOrderValue`, and multivariate event collections on `Events` (list/get/`CreateMarketInMultivariateCollection`). 66 of the 96 paths in the vendored spec are covered; communications (RFQ/quotes), milestones, API-key management, FCM, and search remain unimplemented. See `CHANGELOG.md` and [Kalshi changelog](https://docs.kalshi.com/changelog) for API-facing changes.
 
-Module path: `github.com/UTXOnly/oddrip`. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. Release **v0.6.0** — pin with `go get github.com/UTXOnly/oddrip/oddrip@v0.6.0` after tagging; runtime string `oddrip.Version` matches the module release.
+Module path: `github.com/UTXOnly/oddrip`. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. Current release **v0.6.0** — pin with `go get github.com/UTXOnly/oddrip/oddrip@v0.6.0`; runtime string `oddrip.Version` matches the module tag.
 
 ---
 
@@ -219,3 +221,17 @@ Every server message type has a `types.WSType*` constant and a typed `*Msg` stru
 - **`oddrip/internal/auth`** – RSA-PSS request signer.
 
 All public methods take `context.Context`. The client and WebSocket connection are safe for concurrent use.
+
+---
+
+## Development and releases
+
+CI runs on every pull request and on `main`: `gofmt`, `go mod tidy` drift, `go vet`, `staticcheck`, `govulncheck`, and `go test -race -shuffle=on` on Go 1.24 and stable across Linux, macOS, and Windows. A `version` job checks that `oddrip/version.go`, the top `CHANGELOG.md` entry, and the README pin agree, and fails a code-changing PR whose version is already tagged.
+
+Releases are cut by merging to `main`. To ship a version:
+
+1. Bump `const Version` in `oddrip/version.go`.
+2. Add a `## [X.Y.Z] — YYYY-MM-DD` section at the top of `CHANGELOG.md`; its body becomes the release notes.
+3. Update the `@vX.Y.Z` pin in this README.
+
+When the merge lands and all checks pass, the `release` job tags `vX.Y.Z`, publishes a GitHub Release with the CHANGELOG section, and warms `proxy.golang.org`. A merge whose version is already tagged (docs-only changes) is a no-op.
