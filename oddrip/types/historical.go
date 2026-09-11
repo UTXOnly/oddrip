@@ -17,16 +17,16 @@ type PriceDistributionHistorical struct {
 }
 
 type MarketCandlestickHistorical struct {
-	EndPeriodTs int64                        `json:"end_period_ts"`
-	YesBid      BidAskDistributionHistorical `json:"yes_bid"`
-	YesAsk      BidAskDistributionHistorical `json:"yes_ask"`
-	Price       PriceDistributionHistorical  `json:"price"`
-	Volume       string `json:"volume"`
-	OpenInterest string `json:"open_interest"`
+	EndPeriodTs  int64                        `json:"end_period_ts"`
+	YesBid       BidAskDistributionHistorical `json:"yes_bid"`
+	YesAsk       BidAskDistributionHistorical `json:"yes_ask"`
+	Price        PriceDistributionHistorical  `json:"price"`
+	Volume       string                       `json:"volume"`
+	OpenInterest string                       `json:"open_interest"`
 }
 
 type GetMarketCandlesticksHistoricalResponse struct {
-	Ticker       string                     `json:"ticker"`
+	Ticker       string                        `json:"ticker"`
 	Candlesticks []MarketCandlestickHistorical `json:"candlesticks"`
 }
 
@@ -46,8 +46,8 @@ type GetHistoricalMarketCandlesticksOpts struct {
 }
 
 type GetHistoricalArchiveOpts struct {
-	Ticker   string
-	MaxTs    *int64
-	Limit    *int64
-	Cursor   string
+	Ticker string
+	MaxTs  *int64
+	Limit  *int64
+	Cursor string
 }

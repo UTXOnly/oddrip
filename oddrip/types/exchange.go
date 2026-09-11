@@ -3,9 +3,9 @@ package types
 type ExchangeIndexStatus struct {
 	ExchangeIndex                int    `json:"exchange_index"`
 	Description                  string `json:"description,omitempty"`
-	ExchangeActive               bool `json:"exchange_active"`
-	TradingActive                bool `json:"trading_active"`
-	IntraExchangeTransfersActive bool `json:"intra_exchange_transfers_active"`
+	ExchangeActive               bool   `json:"exchange_active"`
+	TradingActive                bool   `json:"trading_active"`
+	IntraExchangeTransfersActive bool   `json:"intra_exchange_transfers_active"`
 }
 
 type ExchangeStatus struct {
@@ -17,10 +17,10 @@ type ExchangeStatus struct {
 }
 
 type GetHistoricalCutoffResponse struct {
-	MarketSettledTs                string `json:"market_settled_ts"`
-	TradesCreatedTs                string `json:"trades_created_ts"`
-	OrdersUpdatedTs                string `json:"orders_updated_ts"`
-	MarketPositionsLastUpdatedTs   string `json:"market_positions_last_updated_ts,omitempty"`
+	MarketSettledTs              string `json:"market_settled_ts"`
+	TradesCreatedTs              string `json:"trades_created_ts"`
+	OrdersUpdatedTs              string `json:"orders_updated_ts"`
+	MarketPositionsLastUpdatedTs string `json:"market_positions_last_updated_ts,omitempty"`
 }
 
 type GetUserDataTimestampResponse struct {

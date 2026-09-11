@@ -1,22 +1,22 @@
 package types
 
 type EventData struct {
-	EventTicker            string                 `json:"event_ticker"`
-	SeriesTicker           string                 `json:"series_ticker"`
-	SubTitle               string                 `json:"sub_title"`
-	Title                  string                 `json:"title"`
-	CollateralReturnType   string                 `json:"collateral_return_type"`
-	MutuallyExclusive      bool                   `json:"mutually_exclusive"`
-	Category               string                 `json:"category"`
-	StrikeDate             *string                `json:"strike_date,omitempty"`
-	StrikePeriod           *string                `json:"strike_period,omitempty"`
-	Markets                []Market               `json:"markets,omitempty"`
-	ProductMetadata        map[string]interface{} `json:"product_metadata,omitempty"`
-	SettlementSources      []SettlementSource     `json:"settlement_sources,omitempty"`
-	LastUpdatedTs          string                 `json:"last_updated_ts,omitempty"`
-	FeeTypeOverride        string                 `json:"fee_type_override,omitempty"`
-	FeeMultiplierOverride  *float64               `json:"fee_multiplier_override,omitempty"`
-	ExchangeIndex          int                    `json:"exchange_index,omitempty"`
+	EventTicker           string                 `json:"event_ticker"`
+	SeriesTicker          string                 `json:"series_ticker"`
+	SubTitle              string                 `json:"sub_title"`
+	Title                 string                 `json:"title"`
+	CollateralReturnType  string                 `json:"collateral_return_type"`
+	MutuallyExclusive     bool                   `json:"mutually_exclusive"`
+	Category              string                 `json:"category"`
+	StrikeDate            *string                `json:"strike_date,omitempty"`
+	StrikePeriod          *string                `json:"strike_period,omitempty"`
+	Markets               []Market               `json:"markets,omitempty"`
+	ProductMetadata       map[string]interface{} `json:"product_metadata,omitempty"`
+	SettlementSources     []SettlementSource     `json:"settlement_sources,omitempty"`
+	LastUpdatedTs         string                 `json:"last_updated_ts,omitempty"`
+	FeeTypeOverride       string                 `json:"fee_type_override,omitempty"`
+	FeeMultiplierOverride *float64               `json:"fee_multiplier_override,omitempty"`
+	ExchangeIndex         int                    `json:"exchange_index,omitempty"`
 }
 
 type GetEventsOpts struct {
@@ -32,31 +32,31 @@ type GetEventsOpts struct {
 }
 
 type GetEventsResponse struct {
-	Events    []EventData `json:"events"`
+	Events     []EventData `json:"events"`
 	Milestones []Milestone `json:"milestones,omitempty"`
-	Cursor    string      `json:"cursor"`
+	Cursor     string      `json:"cursor"`
 }
 
 type Milestone struct {
-	ID                    string   `json:"id"`
-	Category              string   `json:"category"`
-	Type                  string   `json:"type"`
-	StartDate             string   `json:"start_date"`
-	EndDate               *string  `json:"end_date,omitempty"`
-	RelatedEventTickers   []string `json:"related_event_tickers"`
-	Title                 string   `json:"title"`
-	NotificationMessage   string   `json:"notification_message"`
-	SourceID              *string  `json:"source_id,omitempty"`
-	Details               map[string]interface{} `json:"details"`
-	PrimaryEventTickers  []string `json:"primary_event_tickers"`
-	LastUpdatedTs        string   `json:"last_updated_ts"`
+	ID                  string                 `json:"id"`
+	Category            string                 `json:"category"`
+	Type                string                 `json:"type"`
+	StartDate           string                 `json:"start_date"`
+	EndDate             *string                `json:"end_date,omitempty"`
+	RelatedEventTickers []string               `json:"related_event_tickers"`
+	Title               string                 `json:"title"`
+	NotificationMessage string                 `json:"notification_message"`
+	SourceID            *string                `json:"source_id,omitempty"`
+	Details             map[string]interface{} `json:"details"`
+	PrimaryEventTickers []string               `json:"primary_event_tickers"`
+	LastUpdatedTs       string                 `json:"last_updated_ts"`
 }
 
 type GetMultivariateEventsOpts struct {
-	Limit            *int64
-	Cursor           string
-	SeriesTicker     string
-	CollectionTicker string
+	Limit             *int64
+	Cursor            string
+	SeriesTicker      string
+	CollectionTicker  string
 	WithNestedMarkets *bool
 }
 
@@ -86,12 +86,12 @@ type SettlementSource struct {
 }
 
 type GetEventMetadataResponse struct {
-	ImageURL         string             `json:"image_url"`
-	FeaturedImageURL string             `json:"featured_image_url,omitempty"`
-	MarketDetails    []MarketMetadata   `json:"market_details"`
+	ImageURL          string             `json:"image_url"`
+	FeaturedImageURL  string             `json:"featured_image_url,omitempty"`
+	MarketDetails     []MarketMetadata   `json:"market_details"`
 	SettlementSources []SettlementSource `json:"settlement_sources"`
-	Competition      *string            `json:"competition,omitempty"`
-	CompetitionScope *string            `json:"competition_scope,omitempty"`
+	Competition       *string            `json:"competition,omitempty"`
+	CompetitionScope  *string            `json:"competition_scope,omitempty"`
 }
 
 const (

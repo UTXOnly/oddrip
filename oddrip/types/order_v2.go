@@ -18,13 +18,13 @@ type CreateOrderV2Request struct {
 }
 
 type CreateOrderV2Response struct {
-	OrderID           string  `json:"order_id"`
-	ClientOrderID     string  `json:"client_order_id,omitempty"`
-	FillCount         string  `json:"fill_count"`
-	RemainingCount    string  `json:"remaining_count"`
-	AverageFillPrice  string  `json:"average_fill_price,omitempty"`
-	AverageFeePaid    string  `json:"average_fee_paid,omitempty"`
-	TsMs              int64   `json:"ts_ms"`
+	OrderID          string `json:"order_id"`
+	ClientOrderID    string `json:"client_order_id,omitempty"`
+	FillCount        string `json:"fill_count"`
+	RemainingCount   string `json:"remaining_count"`
+	AverageFillPrice string `json:"average_fill_price,omitempty"`
+	AverageFeePaid   string `json:"average_fee_paid,omitempty"`
+	TsMs             int64  `json:"ts_ms"`
 }
 
 // CancelOrderV2Opts carries the query parameters for cancelling a single
@@ -78,10 +78,10 @@ type DecreaseOrderV2Request struct {
 }
 
 type DecreaseOrderV2Response struct {
-	OrderID         string `json:"order_id"`
-	ClientOrderID   string `json:"client_order_id,omitempty"`
-	RemainingCount  string `json:"remaining_count"`
-	TsMs            int64  `json:"ts_ms"`
+	OrderID        string `json:"order_id"`
+	ClientOrderID  string `json:"client_order_id,omitempty"`
+	RemainingCount string `json:"remaining_count"`
+	TsMs           int64  `json:"ts_ms"`
 }
 
 type BatchCreateOrdersV2Request struct {
@@ -89,14 +89,14 @@ type BatchCreateOrdersV2Request struct {
 }
 
 type BatchCreateOrdersV2IndividualResponse struct {
-	OrderID           string         `json:"order_id,omitempty"`
-	ClientOrderID     *string        `json:"client_order_id,omitempty"`
-	FillCount         *string        `json:"fill_count,omitempty"`
-	RemainingCount    *string        `json:"remaining_count,omitempty"`
-	AverageFillPrice  *string        `json:"average_fill_price,omitempty"`
-	AverageFeePaid    *string        `json:"average_fee_paid,omitempty"`
-	TsMs              *int64         `json:"ts_ms,omitempty"`
-	Error             *ErrorResponse `json:"error,omitempty"`
+	OrderID          string         `json:"order_id,omitempty"`
+	ClientOrderID    *string        `json:"client_order_id,omitempty"`
+	FillCount        *string        `json:"fill_count,omitempty"`
+	RemainingCount   *string        `json:"remaining_count,omitempty"`
+	AverageFillPrice *string        `json:"average_fill_price,omitempty"`
+	AverageFeePaid   *string        `json:"average_fee_paid,omitempty"`
+	TsMs             *int64         `json:"ts_ms,omitempty"`
+	Error            *ErrorResponse `json:"error,omitempty"`
 }
 
 type BatchCreateOrdersV2Response struct {

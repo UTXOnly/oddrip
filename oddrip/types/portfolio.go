@@ -103,9 +103,9 @@ type ApiUsageLevelGrant struct {
 
 type GetAccountApiLimitsResponse struct {
 	UsageTier string               `json:"usage_tier"`
-	Read       BucketLimit          `json:"read"`
-	Write      BucketLimit          `json:"write"`
-	Grants     []ApiUsageLevelGrant `json:"grants"`
+	Read      BucketLimit          `json:"read"`
+	Write     BucketLimit          `json:"write"`
+	Grants    []ApiUsageLevelGrant `json:"grants"`
 }
 
 type EndpointTokenCost struct {
