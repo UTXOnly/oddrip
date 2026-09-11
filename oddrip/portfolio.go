@@ -201,3 +201,13 @@ func (s *PortfolioService) SetTargetBalanceAllocation(ctx context.Context, req *
 	}
 	return s.client.post(ctx, joinPath("portfolio", "target_balance_allocation"), req, nil)
 }
+
+// GetTotalRestingOrderValue returns the total value of resting orders. Kalshi
+// documents this as intended for FCM members only.
+func (s *PortfolioService) GetTotalRestingOrderValue(ctx context.Context) (*types.GetPortfolioRestingOrderTotalValueResponse, error) {
+	var out types.GetPortfolioRestingOrderTotalValueResponse
+	if err := s.client.get(ctx, joinPath("portfolio", "summary", "total_resting_order_value"), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
