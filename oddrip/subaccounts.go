@@ -32,11 +32,13 @@ func (s *SubaccountsService) GetBalances(ctx context.Context) (*types.GetSubacco
 	return &out, nil
 }
 
+// Transfer moves funds between subaccounts. Kalshi deduplicates on
+// ClientTransferID, so the call is safe to retry on transport errors.
 func (s *SubaccountsService) Transfer(ctx context.Context, req *types.ApplySubaccountTransferRequest) error {
 	if req == nil || req.ClientTransferID == "" {
 		return errors.New("client_transfer_id required")
 	}
-	return s.client.post(ctx, joinPath("portfolio", "subaccounts", "transfer"), req, nil)
+	return s.client.postIdempotent(ctx, joinPath("portfolio", "subaccounts", "transfer"), req, nil)
 }
 
 func (s *SubaccountsService) ListTransfers(ctx context.Context, opts *types.GetSubaccountTransfersOpts) (*types.GetSubaccountTransfersResponse, error) {
@@ -64,5 +66,5 @@ func (s *SubaccountsService) UpdateNetting(ctx context.Context, req *types.Updat
 	if req == nil {
 		return errors.New("request required")
 	}
-	return s.client.put(ctx, joinPath("portfolio", "subaccounts", "netting"), req, nil)
+	return s.client.put(ctx, joinPath("portfolio", "subaccounts", "netting"), nil, req, nil)
 }

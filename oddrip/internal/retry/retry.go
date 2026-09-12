@@ -2,6 +2,7 @@ package retry
 
 import (
 	"context"
+	"io"
 	"math"
 	"math/rand"
 	"net/http"
@@ -44,13 +45,25 @@ func (c Config) Delay(attempt int, retryAfter time.Duration) time.Duration {
 	return d
 }
 
-func IsRetryable(statusCode int) bool {
-	return statusCode == 429 || (statusCode >= 500 && statusCode < 600)
+// IsRetryable reports whether a status should be retried. 429 always is: the
+// server rejected the request before acting on it. 5xx is ambiguous — a
+// gateway timeout or a handler error after the write committed both look the
+// same to the client — so it is retried only for idempotent requests.
+func IsRetryable(statusCode int, idempotent bool) bool {
+	if statusCode == 429 {
+		return true
+	}
+	return idempotent && statusCode >= 500 && statusCode < 600
 }
 
 // Do never returns (nil, nil). When every attempt yields a retryable status
 // the last response is returned with its body open so the caller can parse it.
-func Do(ctx context.Context, cfg Config, fn func() (*http.Response, error)) (*http.Response, error) {
+//
+// Transport errors (connection failures, resets, client timeouts) are retried
+// only when idempotent is true: the server may have applied the request even
+// though no response arrived, and replaying a non-idempotent write would apply
+// it twice.
+func Do(ctx context.Context, cfg Config, idempotent bool, fn func() (*http.Response, error)) (*http.Response, error) {
 	attempts := cfg.MaxAttempts
 	if attempts < 1 {
 		attempts = 1
@@ -63,14 +76,16 @@ func Do(ctx context.Context, cfg Config, fn func() (*http.Response, error)) (*ht
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			if last {
+			if last || !idempotent {
 				return nil, err
 			}
 		} else {
-			if last || !IsRetryable(resp.StatusCode) {
+			if last || !IsRetryable(resp.StatusCode, idempotent) {
 				return resp, nil
 			}
 			retryAfter = parseRetryAfter(resp.Header.Get("Retry-After"))
+			// Drain a bounded amount so the connection can be reused for the retry.
+			io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 			resp.Body.Close()
 		}
 		if err := wait(ctx, cfg.Delay(attempt, retryAfter)); err != nil {

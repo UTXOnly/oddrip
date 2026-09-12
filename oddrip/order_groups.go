@@ -3,7 +3,6 @@ package oddrip
 import (
 	"context"
 	"errors"
-	"net/http"
 	"net/url"
 
 	"github.com/UTXOnly/oddrip/oddrip/types"
@@ -55,12 +54,12 @@ func (s *OrderGroupsService) Delete(ctx context.Context, orderGroupID string, op
 
 // Reset zeroes the group's matched-contracts counter so new orders can be placed.
 func (s *OrderGroupsService) Reset(ctx context.Context, orderGroupID string, opts *types.OrderGroupOpts) error {
-	return s.client.do(ctx, http.MethodPut, joinPath("portfolio", "order_groups", orderGroupID, "reset"), orderGroupQuery(opts), nil, nil)
+	return s.client.put(ctx, joinPath("portfolio", "order_groups", orderGroupID, "reset"), orderGroupQuery(opts), nil, nil)
 }
 
 // Trigger cancels every order in the group and blocks new orders until Reset.
 func (s *OrderGroupsService) Trigger(ctx context.Context, orderGroupID string, opts *types.OrderGroupOpts) error {
-	return s.client.do(ctx, http.MethodPut, joinPath("portfolio", "order_groups", orderGroupID, "trigger"), orderGroupQuery(opts), nil, nil)
+	return s.client.put(ctx, joinPath("portfolio", "order_groups", orderGroupID, "trigger"), orderGroupQuery(opts), nil, nil)
 }
 
 // UpdateLimit changes the rolling 15-second contracts limit. A limit already
@@ -69,7 +68,7 @@ func (s *OrderGroupsService) UpdateLimit(ctx context.Context, orderGroupID strin
 	if req == nil || (req.ContractsLimit == nil && req.ContractsLimitFp == nil) {
 		return errors.New("contracts_limit or contracts_limit_fp required")
 	}
-	return s.client.do(ctx, http.MethodPut, joinPath("portfolio", "order_groups", orderGroupID, "limit"), orderGroupQuery(opts), req, nil)
+	return s.client.put(ctx, joinPath("portfolio", "order_groups", orderGroupID, "limit"), orderGroupQuery(opts), req, nil)
 }
 
 func orderGroupQuery(opts *types.OrderGroupOpts) url.Values {

@@ -733,3 +733,166 @@ func TestClient_RetryWaitHonorsContext(t *testing.T) {
 		t.Fatalf("took %v", elapsed)
 	}
 }
+
+// path.Join would drop an empty segment and route the call to a different
+// endpoint; the worst case is CancelV2 with an empty order ID becoming
+// DELETE /portfolio/events/orders, which is CancelAll.
+func TestEmptyPathParam_Refused(t *testing.T) {
+	client, ct := newCaptureClient(200, `{}`)
+	ctx := context.Background()
+	calls := map[string]func() error{
+		"Orders.CancelV2":    func() error { _, err := client.Orders.CancelV2(ctx, "", nil); return err },
+		"Orders.Get":         func() error { _, err := client.Orders.Get(ctx, ""); return err },
+		"Markets.Get":        func() error { _, err := client.Markets.Get(ctx, ""); return err },
+		"Events.Get":         func() error { _, err := client.Events.Get(ctx, "", nil); return err },
+		"Series.Get":         func() error { _, err := client.Series.Get(ctx, "", nil); return err },
+		"OrderGroups.Delete": func() error { return client.OrderGroups.Delete(ctx, "", nil) },
+		"Series.GetMarketCandlesticks(dotdot)": func() error {
+			_, err := client.Series.GetMarketCandlesticks(ctx, "KXHIGHNY", "..", &types.GetMarketCandlesticksOpts{StartTs: 1, EndTs: 2, PeriodInterval: 60})
+			return err
+		},
+	}
+	for name, call := range calls {
+		ct.req = nil
+		err := call()
+		if !errors.Is(err, ErrEmptyPathParam) {
+			t.Errorf("%s: err = %v, want ErrEmptyPathParam", name, err)
+		}
+		if ct.req != nil {
+			t.Errorf("%s: request was sent: %s %s", name, ct.req.Method, ct.req.URL.Path)
+		}
+	}
+}
+
+func TestJoinPath_EscapesSegments(t *testing.T) {
+	if got := joinPath("markets", "FED-23DEC-T3.00", "orderbook"); got != "/markets/FED-23DEC-T3.00/orderbook" {
+		t.Errorf("joinPath = %q", got)
+	}
+	if got := joinPath("live_data", "weather", "a/b c"); got != "/live_data/weather/a%2Fb%20c" {
+		t.Errorf("joinPath escaped = %q", got)
+	}
+}
+
+// countingServer answers every request with status until the caller's ctx
+// ends, recording how many attempts the client made.
+func countingServer(t *testing.T, status int) (*Client, *int32) {
+	t.Helper()
+	var calls int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		w.WriteHeader(status)
+		w.Write([]byte(`{"code":"boom","message":"boom"}`))
+	}))
+	t.Cleanup(srv.Close)
+	client := New(BaseURL(srv.URL), RetryConfigOption(RetryConfig{
+		MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond,
+	}))
+	return client, &calls
+}
+
+// Writes that Kalshi cannot deduplicate must not be replayed on an ambiguous
+// failure; writes it can (or reads) keep the full retry policy.
+func TestRetryPolicy_ByIdempotency(t *testing.T) {
+	ctx := context.Background()
+	order := func(clientOrderID string) *types.CreateOrderV2Request {
+		return &types.CreateOrderV2Request{Ticker: "T", ClientOrderID: clientOrderID, Side: "yes", Count: "1", Price: "0.50"}
+	}
+	cases := []struct {
+		name      string
+		status    int
+		call      func(*Client) error
+		wantCalls int32
+	}{
+		{"GET 503 retried", 503, func(c *Client) error { _, err := c.Exchange.GetStatus(ctx); return err }, 3},
+		{"DELETE cancel 503 retried", 503, func(c *Client) error { _, err := c.Orders.CancelV2(ctx, "o1", nil); return err }, 3},
+		{"PUT reset 503 retried", 503, func(c *Client) error { return c.OrderGroups.Reset(ctx, "g1", nil) }, 3},
+		{"create with client_order_id 503 retried", 503, func(c *Client) error { _, err := c.Orders.CreateV2(ctx, order("cid-1")); return err }, 3},
+		{"create without client_order_id 503 NOT retried", 503, func(c *Client) error { _, err := c.Orders.CreateV2(ctx, order("")); return err }, 1},
+		{"create without client_order_id 429 retried", 429, func(c *Client) error { _, err := c.Orders.CreateV2(ctx, order("")); return err }, 3},
+		{"decrease 502 NOT retried", 502, func(c *Client) error {
+			rb := "1"
+			_, err := c.Orders.DecreaseV2(ctx, "o1", &types.DecreaseOrderV2Request{ReduceBy: &rb}, nil)
+			return err
+		}, 1},
+		{"amend 500 NOT retried", 500, func(c *Client) error {
+			_, err := c.Orders.AmendV2(ctx, "o1", &types.AmendOrderV2Request{}, nil)
+			return err
+		}, 1},
+		{"batch create all keyed 503 retried", 503, func(c *Client) error {
+			_, err := c.Orders.BatchCreateV2(ctx, &types.BatchCreateOrdersV2Request{Orders: []types.CreateOrderV2Request{*order("a"), *order("b")}})
+			return err
+		}, 3},
+		{"batch create one unkeyed 503 NOT retried", 503, func(c *Client) error {
+			_, err := c.Orders.BatchCreateV2(ctx, &types.BatchCreateOrdersV2Request{Orders: []types.CreateOrderV2Request{*order("a"), *order("")}})
+			return err
+		}, 1},
+		{"transfer 503 retried", 503, func(c *Client) error {
+			return c.Subaccounts.Transfer(ctx, &types.ApplySubaccountTransferRequest{ClientTransferID: "t1", FromSubaccount: 0, ToSubaccount: 1, AmountCents: 100})
+		}, 3},
+		{"create order group 503 NOT retried", 503, func(c *Client) error {
+			lim := int64(10)
+			_, err := c.OrderGroups.Create(ctx, &types.CreateOrderGroupRequest{ContractsLimit: &lim})
+			return err
+		}, 1},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client, calls := countingServer(t, tc.status)
+			err := tc.call(client)
+			var apiErr *APIError
+			if !errors.As(err, &apiErr) || apiErr.StatusCode != tc.status {
+				t.Fatalf("err = %v, want *APIError %d", err, tc.status)
+			}
+			if got := atomic.LoadInt32(calls); got != tc.wantCalls {
+				t.Fatalf("attempts = %d, want %d", got, tc.wantCalls)
+			}
+		})
+	}
+}
+
+// A dropped connection with no response is the replay case that matters most.
+func TestRetryPolicy_TransportError(t *testing.T) {
+	ctx := context.Background()
+	newClient := func(t *testing.T) (*Client, *int32) {
+		t.Helper()
+		var calls int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			atomic.AddInt32(&calls, 1)
+			hj, ok := w.(http.Hijacker)
+			if !ok {
+				t.Fatal("no hijacker")
+			}
+			conn, _, err := hj.Hijack()
+			if err != nil {
+				t.Fatal(err)
+			}
+			conn.Close() // reset with no response
+		}))
+		t.Cleanup(srv.Close)
+		return New(BaseURL(srv.URL), RetryConfigOption(RetryConfig{
+			MaxAttempts: 3, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond,
+		})), &calls
+	}
+
+	client, calls := newClient(t)
+	if _, err := client.Exchange.GetStatus(ctx); err == nil {
+		t.Fatal("expected transport error")
+	}
+	if got := atomic.LoadInt32(calls); got != 3 {
+		t.Fatalf("GET attempts = %d, want 3", got)
+	}
+
+	client, calls = newClient(t)
+	rb := "1"
+	_, err := client.Orders.DecreaseV2(ctx, "o1", &types.DecreaseOrderV2Request{ReduceBy: &rb}, nil)
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		t.Fatalf("transport error must not be an *APIError: %v", err)
+	}
+	if got := atomic.LoadInt32(calls); got != 1 {
+		t.Fatalf("DecreaseV2 attempts = %d, want 1 (no replay)", got)
+	}
+}

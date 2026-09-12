@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strings"
 	"time"
 
@@ -102,7 +102,23 @@ func New(opts ...Option) *Client {
 	return c
 }
 
-func (c *Client) do(ctx context.Context, method, path string, query url.Values, body interface{}, out interface{}) error {
+// ErrEmptyPathParam is returned when a path parameter (ticker, order ID,
+// series ticker, ...) is empty or a "." / ".." segment. Dropping the segment
+// would route the request to a different endpoint — an empty order ID would
+// turn DELETE /portfolio/events/orders/{id} into CancelAll — so the request is
+// refused before anything is sent.
+var ErrEmptyPathParam = errors.New("oddrip: empty path parameter")
+
+// do sends one request. idempotent selects the retry policy: idempotent
+// requests are retried on 429, 5xx, and transport errors; non-idempotent ones
+// only on 429, because a 5xx or a dropped connection may mean the write was
+// applied and a replay would apply it again. GET, PUT, and DELETE are
+// idempotent by construction; POST is only when the body carries a
+// deduplication key (see postIdempotent).
+func (c *Client) do(ctx context.Context, method, path string, query url.Values, body interface{}, out interface{}, idempotent bool) error {
+	if path == "" {
+		return ErrEmptyPathParam
+	}
 	var bodyBytes []byte
 	if body != nil {
 		var err error
@@ -117,7 +133,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		u += "?" + query.Encode()
 	}
 
-	resp, err := retry.Do(ctx, c.retry, func() (*http.Response, error) {
+	resp, err := retry.Do(ctx, c.retry, idempotent, func() (*http.Response, error) {
 		var bodyReader io.Reader
 		if len(bodyBytes) > 0 {
 			bodyReader = bytes.NewReader(bodyBytes)
@@ -155,23 +171,31 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values, out interface{}) error {
-	return c.do(ctx, http.MethodGet, path, query, nil, out)
+	return c.do(ctx, http.MethodGet, path, query, nil, out, true)
 }
 
+// post is for writes that are not safe to replay (amend, decrease, create
+// without a deduplication key): retried on 429 only.
 func (c *Client) post(ctx context.Context, path string, body interface{}, out interface{}) error {
 	return c.postQuery(ctx, path, nil, body, out)
 }
 
 func (c *Client) postQuery(ctx context.Context, path string, query url.Values, body interface{}, out interface{}) error {
-	return c.do(ctx, http.MethodPost, path, query, body, out)
+	return c.do(ctx, http.MethodPost, path, query, body, out, false)
 }
 
-func (c *Client) put(ctx context.Context, path string, body interface{}, out interface{}) error {
-	return c.do(ctx, http.MethodPut, path, nil, body, out)
+// postIdempotent is for POSTs the server deduplicates (client_order_id,
+// client_transfer_id) or that set absolute state: full retry policy.
+func (c *Client) postIdempotent(ctx context.Context, path string, body interface{}, out interface{}) error {
+	return c.do(ctx, http.MethodPost, path, nil, body, out, true)
+}
+
+func (c *Client) put(ctx context.Context, path string, query url.Values, body interface{}, out interface{}) error {
+	return c.do(ctx, http.MethodPut, path, query, body, out, true)
 }
 
 func (c *Client) delete(ctx context.Context, path string, query url.Values, body interface{}, out interface{}) error {
-	return c.do(ctx, http.MethodDelete, path, query, body, out)
+	return c.do(ctx, http.MethodDelete, path, query, body, out, true)
 }
 
 func encodeQuery(v url.Values, key string, value string) {
@@ -206,6 +230,18 @@ func encodeQueryStrings(v url.Values, key string, values []string) {
 	}
 }
 
+// joinPath builds a request path from literal and parameter segments. Each
+// segment is path-escaped so a value containing "/" stays a single segment.
+// It returns "" when any segment is empty, ".", or "..", and do() rejects that
+// with ErrEmptyPathParam.
 func joinPath(elem ...string) string {
-	return "/" + path.Join(elem...)
+	var b strings.Builder
+	for _, e := range elem {
+		if e == "" || e == "." || e == ".." {
+			return ""
+		}
+		b.WriteByte('/')
+		b.WriteString(url.PathEscape(e))
+	}
+	return b.String()
 }

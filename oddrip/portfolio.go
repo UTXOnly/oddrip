@@ -199,7 +199,8 @@ func (s *PortfolioService) SetTargetBalanceAllocation(ctx context.Context, req *
 	if len(req.Allocations) > 0 && total != 100 {
 		return fmt.Errorf("allocations must total 100, got %d", total)
 	}
-	return s.client.post(ctx, joinPath("portfolio", "target_balance_allocation"), req, nil)
+	// Sets absolute state, so a replay is harmless.
+	return s.client.postIdempotent(ctx, joinPath("portfolio", "target_balance_allocation"), req, nil)
 }
 
 // GetTotalRestingOrderValue returns the total value of resting orders. Kalshi

@@ -62,9 +62,20 @@ func (s *OrdersService) GetQueuePositions(ctx context.Context, opts *types.GetOr
 	return &out, nil
 }
 
+// CreateV2 places an order. Kalshi deduplicates on ClientOrderID; when it is
+// set the call is retried on 5xx and transport errors like any idempotent
+// request, otherwise only on 429 so a dropped connection cannot place the
+// order twice.
 func (s *OrdersService) CreateV2(ctx context.Context, req *types.CreateOrderV2Request) (*types.CreateOrderV2Response, error) {
+	if req == nil {
+		return nil, errors.New("request required")
+	}
+	post := s.client.post
+	if req.ClientOrderID != "" {
+		post = s.client.postIdempotent
+	}
 	var out types.CreateOrderV2Response
-	if err := s.client.post(ctx, joinPath("portfolio", "events", "orders"), req, &out); err != nil {
+	if err := post(ctx, joinPath("portfolio", "events", "orders"), req, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -116,9 +127,21 @@ func (s *OrdersService) DecreaseV2(ctx context.Context, orderID string, req *typ
 	return &out, nil
 }
 
+// BatchCreateV2 places up to 20 orders. The batch gets the idempotent retry
+// policy only when every order carries a ClientOrderID (see CreateV2).
 func (s *OrdersService) BatchCreateV2(ctx context.Context, req *types.BatchCreateOrdersV2Request) (*types.BatchCreateOrdersV2Response, error) {
+	if req == nil {
+		return nil, errors.New("request required")
+	}
+	post := s.client.postIdempotent
+	for _, o := range req.Orders {
+		if o.ClientOrderID == "" {
+			post = s.client.post
+			break
+		}
+	}
 	var out types.BatchCreateOrdersV2Response
-	if err := s.client.post(ctx, joinPath("portfolio", "events", "orders", "batched"), req, &out); err != nil {
+	if err := post(ctx, joinPath("portfolio", "events", "orders", "batched"), req, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

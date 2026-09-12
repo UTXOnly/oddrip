@@ -41,7 +41,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 func TestDo_ExhaustedReturnsLastResponse(t *testing.T) {
 	var calls int
 	var bodies []*body
-	resp, err := Do(context.Background(), fastConfig, func() (*http.Response, error) {
+	resp, err := Do(context.Background(), fastConfig, true, func() (*http.Response, error) {
 		calls++
 		r := newResp(429, "rate limited", nil)
 		bodies = append(bodies, r.Body.(*body))
@@ -71,7 +71,7 @@ func TestDo_ExhaustedReturnsLastResponse(t *testing.T) {
 
 func TestDo_TransportErrorThenSuccess(t *testing.T) {
 	var calls int
-	resp, err := Do(context.Background(), fastConfig, func() (*http.Response, error) {
+	resp, err := Do(context.Background(), fastConfig, true, func() (*http.Response, error) {
 		calls++
 		if calls < fastConfig.MaxAttempts {
 			return nil, errors.New("dial")
@@ -92,7 +92,7 @@ func TestDo_TransportErrorThenSuccess(t *testing.T) {
 func TestDo_TransportErrorExhausted(t *testing.T) {
 	sentinel := errors.New("dial")
 	var calls int
-	resp, err := Do(context.Background(), fastConfig, func() (*http.Response, error) {
+	resp, err := Do(context.Background(), fastConfig, true, func() (*http.Response, error) {
 		calls++
 		return nil, sentinel
 	})
@@ -109,7 +109,7 @@ func TestDo_TransportErrorExhausted(t *testing.T) {
 
 func TestDo_NonRetryableReturnedImmediately(t *testing.T) {
 	var calls int
-	resp, err := Do(context.Background(), fastConfig, func() (*http.Response, error) {
+	resp, err := Do(context.Background(), fastConfig, true, func() (*http.Response, error) {
 		calls++
 		return newResp(400, "bad request", nil), nil
 	})
@@ -132,7 +132,7 @@ func TestDo_ContextCancelledWhileWaiting(t *testing.T) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
 		defer cancel()
 		start := time.Now()
-		resp, err := Do(ctx, cfg, func() (*http.Response, error) {
+		resp, err := Do(ctx, cfg, true, func() (*http.Response, error) {
 			return newResp(503, "", h), nil
 		})
 		if !errors.Is(err, context.DeadlineExceeded) {
@@ -151,7 +151,7 @@ func TestDo_ContextCancelledWhileWaiting(t *testing.T) {
 		defer cancel()
 		var calls int
 		start := time.Now()
-		_, err := Do(ctx, cfg, func() (*http.Response, error) {
+		_, err := Do(ctx, cfg, true, func() (*http.Response, error) {
 			calls++
 			cancel()
 			return newResp(503, "", h), nil
@@ -201,7 +201,7 @@ func TestDelay_RetryAfter(t *testing.T) {
 func TestDo_ZeroMaxAttempts(t *testing.T) {
 	cfg := Config{MaxAttempts: 0, InitialDelay: time.Millisecond, MaxDelay: time.Millisecond}
 	var calls int
-	resp, err := Do(context.Background(), cfg, func() (*http.Response, error) {
+	resp, err := Do(context.Background(), cfg, true, func() (*http.Response, error) {
 		calls++
 		return newResp(429, "rate limited", nil), nil
 	})
@@ -213,5 +213,64 @@ func TestDo_ZeroMaxAttempts(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Fatalf("calls: %d", calls)
+	}
+}
+
+// A non-idempotent request must not be replayed after a transport error: the
+// server may have applied it even though no response arrived.
+func TestDo_NonIdempotent_TransportErrorNotRetried(t *testing.T) {
+	var calls int
+	want := errors.New("connection reset")
+	_, err := Do(context.Background(), fastConfig, false, func() (*http.Response, error) {
+		calls++
+		return nil, want
+	})
+	if !errors.Is(err, want) || calls != 1 {
+		t.Fatalf("err=%v calls=%d", err, calls)
+	}
+}
+
+func TestDo_NonIdempotent_5xxNotRetried(t *testing.T) {
+	var calls int
+	resp, err := Do(context.Background(), fastConfig, false, func() (*http.Response, error) {
+		calls++
+		return newResp(504, "gateway timeout", nil), nil
+	})
+	if err != nil || resp.StatusCode != 504 || calls != 1 {
+		t.Fatalf("err=%v status=%d calls=%d", err, resp.StatusCode, calls)
+	}
+}
+
+// 429 means the server rejected the request before acting on it, so it is
+// safe to retry regardless of idempotency.
+func TestDo_NonIdempotent_429Retried(t *testing.T) {
+	var calls int
+	resp, err := Do(context.Background(), fastConfig, false, func() (*http.Response, error) {
+		calls++
+		if calls < 3 {
+			return newResp(429, "slow down", nil), nil
+		}
+		return newResp(200, "ok", nil), nil
+	})
+	if err != nil || resp.StatusCode != 200 || calls != 3 {
+		t.Fatalf("err=%v status=%d calls=%d", err, resp.StatusCode, calls)
+	}
+}
+
+func TestIsRetryable(t *testing.T) {
+	cases := []struct {
+		status     int
+		idempotent bool
+		want       bool
+	}{
+		{429, false, true}, {429, true, true},
+		{500, false, false}, {500, true, true},
+		{503, false, false}, {503, true, true},
+		{400, true, false}, {404, true, false}, {200, true, false},
+	}
+	for _, c := range cases {
+		if got := IsRetryable(c.status, c.idempotent); got != c.want {
+			t.Errorf("IsRetryable(%d, %v) = %v, want %v", c.status, c.idempotent, got, c.want)
+		}
 	}
 }
