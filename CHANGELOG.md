@@ -38,7 +38,7 @@ Two source-incompatible API changes (the only ones `gorelease -base=v0.5.0` repo
 
 ### Changed
 
-- **WebSocket messages are never dropped silently.** Previously a consumer that fell 256 messages behind lost messages with no signal. Now the buffer is `WSBufferSize(n)` (default 4096) and on overflow the connection fails with `ErrWSSlowConsumer` and closes — a gap in `orderbook_delta` is unrecoverable without a re-snapshot, so failing loudly is correct. Treat `Messages()` closing as "reconnect and re-subscribe".
+- **WebSocket messages are never dropped for a slow consumer.** Previously a consumer that fell 256 messages behind lost messages with no signal. Now the buffer is `WSBufferSize(n)` (default 4096) and on overflow the connection fails with `ErrWSSlowConsumer` and closes — a gap in `orderbook_delta` is unrecoverable without a re-snapshot, so failing loudly is correct. Treat `Messages()` closing as "reconnect and re-subscribe".
 - **WebSocket keepalive and dead-connection detection.** Client pings every `WSPingInterval` (default 30s) and enforces a read deadline of `WSReadTimeout` (default 90s), extended on every frame. A half-open socket now surfaces as a timeout error instead of blocking `Messages()` forever. `<= 0` disables either.
 - **`Close()`** is idempotent and no longer writes a close frame on an already-dead connection. `Subscribe` and friends return `ErrWSClosed` (or the terminal error) immediately after close/disconnect instead of waiting on the context.
 - **`Retry-After`** is honored in HTTP-date form as well as delta-seconds. `RetryConfig.MaxAttempts` below 1 is treated as 1.
