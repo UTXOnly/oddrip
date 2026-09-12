@@ -365,6 +365,262 @@ func TestWS_Subscribe_ServerError(t *testing.T) {
 	}
 }
 
+// wsUpdateReplier serves one update_subscription command: it decodes the
+// command and writes whatever frames reply(id, params) returns, in order.
+func wsUpdateReplier(reply func(id int, params types.UpdateSubscriptionParams) []map[string]interface{}) func(*websocket.Conn) {
+	return func(conn *websocket.Conn) {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var cmd types.UpdateSubscriptionCommand
+		if json.Unmarshal(data, &cmd) != nil || cmd.Cmd != "update_subscription" {
+			return
+		}
+		for _, frame := range reply(cmd.ID, cmd.Params) {
+			body, _ := json.Marshal(frame)
+			if conn.WriteMessage(websocket.TextMessage, body) != nil {
+				return
+			}
+		}
+		wsDrain(conn)
+	}
+}
+
+func wsTestCtx(t *testing.T) context.Context {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	t.Cleanup(cancel)
+	return ctx
+}
+
+// The spec answers get_snapshot with orderbook_snapshot frames that carry no
+// command id; the call must complete on the first one for the subscription.
+func TestWS_UpdateSubscription_GetSnapshot_SnapshotOnly(t *testing.T) {
+	snapshot := map[string]interface{}{
+		"market_ticker":  "FED-23DEC-T3.00",
+		"market_id":      "9b0f6b43-5b68-4f9f-9f02-9a2d1b8ac1a1",
+		"yes_dollars_fp": [][]string{{"0.0800", "300.00"}},
+	}
+	ws := wsTestConnect(t, wsTestServer(t, wsUpdateReplier(func(id int, p types.UpdateSubscriptionParams) []map[string]interface{} {
+		if p.Action != types.WSUpdateSubscriptionGetSnapshot || len(p.Sids) != 1 || p.Sids[0] != 7 {
+			return []map[string]interface{}{{"id": id, "type": "error", "msg": map[string]interface{}{"code": 1, "msg": "bad command"}}}
+		}
+		return []map[string]interface{}{
+			// A snapshot for a different sid must not satisfy the waiter.
+			{"type": "orderbook_snapshot", "sid": 8, "seq": 1, "msg": snapshot},
+			{"type": "orderbook_snapshot", "sid": 7, "seq": 12, "msg": snapshot},
+		}
+	})))
+	resp, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{
+		Sids:          []int{7},
+		MarketTickers: []string{"FED-23DEC-T3.00"},
+		Action:        types.WSUpdateSubscriptionGetSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSubscription(get_snapshot): %v", err)
+	}
+	if resp.Type != types.WSTypeOrderbookSnapshot || resp.SID != 7 || resp.Seq != 12 || resp.Msg != nil {
+		t.Fatalf("resp = %+v", resp)
+	}
+	// Both frames still reach the consumer.
+	var got []int
+	for len(got) < 2 {
+		select {
+		case m := <-ws.Messages():
+			if m.Type == types.WSTypeOrderbookSnapshot {
+				got = append(got, m.SID)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatalf("snapshots on Messages(): got %v", got)
+		}
+	}
+	if got[0] != 8 || got[1] != 7 {
+		t.Fatalf("snapshot sids on Messages() = %v", got)
+	}
+}
+
+func TestWS_UpdateSubscription_GetSnapshot_OKReply(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsUpdateReplier(func(id int, p types.UpdateSubscriptionParams) []map[string]interface{} {
+		return []map[string]interface{}{{"id": id, "sid": 7, "seq": 3, "type": "ok", "msg": map[string]interface{}{"market_tickers": []string{"A", "B"}}}}
+	})))
+	sid := 7
+	resp, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{
+		SID: &sid, MarketTickers: []string{"A"}, Action: types.WSUpdateSubscriptionGetSnapshot,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSubscription: %v", err)
+	}
+	if resp.Type != types.WSTypeOK || resp.SID != 7 || resp.Msg == nil || len(resp.Msg.MarketTickers) != 2 {
+		t.Fatalf("resp = %+v", resp)
+	}
+}
+
+func TestWS_UpdateSubscription_GetSnapshot_ServerError(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsUpdateReplier(func(id int, p types.UpdateSubscriptionParams) []map[string]interface{} {
+		return []map[string]interface{}{{"id": id, "type": "error", "msg": map[string]interface{}{"code": 6, "msg": "Invalid subscription id"}}}
+	})))
+	sid := 99
+	_, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{
+		SID: &sid, MarketTickers: []string{"A"}, Action: types.WSUpdateSubscriptionGetSnapshot,
+	})
+	var wsErr *WSError
+	if !errors.As(err, &wsErr) || wsErr.Code != 6 {
+		t.Fatalf("err = %v, want *WSError code 6", err)
+	}
+}
+
+func TestWS_UpdateSubscription_GetSnapshot_RequiresSID(t *testing.T) {
+	ws := &WSConn{}
+	_, err := ws.UpdateSubscription(context.Background(), types.UpdateSubscriptionParams{
+		MarketTickers: []string{"A"}, Action: types.WSUpdateSubscriptionGetSnapshot,
+	})
+	if err == nil {
+		t.Fatal("expected error when get_snapshot has no sid")
+	}
+}
+
+func TestWS_UpdateSubscription_AddMarkets_OK(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsUpdateReplier(func(id int, p types.UpdateSubscriptionParams) []map[string]interface{} {
+		if p.Action != types.WSUpdateSubscriptionAddMarkets {
+			return []map[string]interface{}{{"id": id, "type": "error", "msg": map[string]interface{}{"code": 1, "msg": "bad command"}}}
+		}
+		return []map[string]interface{}{
+			{"id": id, "sid": 456, "seq": 222, "type": "ok", "msg": map[string]interface{}{"market_tickers": []string{"MARKET-1", "MARKET-2", "MARKET-3"}}},
+			{"type": "orderbook_snapshot", "sid": 456, "seq": 223, "msg": map[string]interface{}{"market_ticker": "MARKET-3", "market_id": "x"}},
+		}
+	})))
+	resp, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{
+		Sids: []int{456}, MarketTickers: []string{"MARKET-3"}, Action: types.WSUpdateSubscriptionAddMarkets,
+	})
+	if err != nil {
+		t.Fatalf("UpdateSubscription: %v", err)
+	}
+	if resp.Type != types.WSTypeOK || resp.ID == 0 || resp.SID != 456 || resp.Seq != 222 {
+		t.Fatalf("resp = %+v", resp)
+	}
+	if resp.Msg == nil || len(resp.Msg.MarketTickers) != 3 {
+		t.Fatalf("resp.Msg = %+v", resp.Msg)
+	}
+}
+
+// indexlist / underlying_list replies carry the command id but a list-specific
+// type; the list itself decodes into OKMsg.
+func TestWS_UpdateSubscription_IndexList(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsUpdateReplier(func(id int, p types.UpdateSubscriptionParams) []map[string]interface{} {
+		return []map[string]interface{}{{"id": id, "sid": 3, "seq": 9, "type": "cfbenchmarks_value_indexlist", "msg": map[string]interface{}{"index_ids": []string{"BRTI", "ETHUSD_RTI"}}}}
+	})))
+	sid := 3
+	resp, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{SID: &sid, Action: types.WSUpdateSubscriptionIndexList})
+	if err != nil {
+		t.Fatalf("UpdateSubscription: %v", err)
+	}
+	if resp.Type != types.WSTypeCFBenchmarksValueIndexList || resp.Msg == nil || len(resp.Msg.IndexIDs) != 2 || resp.Msg.IndexIDs[0] != "BRTI" {
+		t.Fatalf("resp = %+v msg=%+v", resp, resp.Msg)
+	}
+}
+
+// A get_snapshot waiter must not survive the call: a later snapshot on the
+// same sid goes only to Messages().
+func TestWS_UpdateSubscription_GetSnapshot_WaiterRemoved(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsUpdateReplier(func(id int, p types.UpdateSubscriptionParams) []map[string]interface{} {
+		return []map[string]interface{}{{"type": "orderbook_snapshot", "sid": 7, "seq": 1, "msg": map[string]interface{}{"market_ticker": "A", "market_id": "x"}}}
+	})))
+	sid := 7
+	if _, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{SID: &sid, MarketTickers: []string{"A"}, Action: types.WSUpdateSubscriptionGetSnapshot}); err != nil {
+		t.Fatalf("UpdateSubscription: %v", err)
+	}
+	ws.pendMu.Lock()
+	n := len(ws.snapshots) + len(ws.pending)
+	ws.pendMu.Unlock()
+	if n != 0 {
+		t.Fatalf("waiters left registered: %d", n)
+	}
+}
+
+// Two get_snapshot calls in flight on the same sid both complete on the next
+// snapshot; neither starves the other.
+func TestWS_UpdateSubscription_GetSnapshot_ConcurrentSameSID(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, func(conn *websocket.Conn) {
+		for i := 0; i < 2; i++ {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+		body, _ := json.Marshal(map[string]interface{}{"type": "orderbook_snapshot", "sid": 7, "seq": 1, "msg": map[string]interface{}{"market_ticker": "A", "market_id": "x"}})
+		conn.WriteMessage(websocket.TextMessage, body)
+		wsDrain(conn)
+	}))
+	sid := 7
+	errs := make(chan error, 2)
+	for i := 0; i < 2; i++ {
+		go func() {
+			_, err := ws.UpdateSubscription(wsTestCtx(t), types.UpdateSubscriptionParams{SID: &sid, MarketTickers: []string{"A"}, Action: types.WSUpdateSubscriptionGetSnapshot})
+			errs <- err
+		}()
+	}
+	for i := 0; i < 2; i++ {
+		if err := <-errs; err != nil {
+			t.Fatalf("UpdateSubscription: %v", err)
+		}
+	}
+}
+
+// A channel rejected after others were accepted: the accepted sids are live
+// on the server and must be returned alongside the error.
+func TestWS_Subscribe_PartialFailure(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, func(conn *websocket.Conn) {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var cmd struct {
+			ID int `json:"id"`
+		}
+		json.Unmarshal(data, &cmd)
+		for _, frame := range []map[string]interface{}{
+			{"id": cmd.ID, "type": "subscribed", "msg": map[string]interface{}{"channel": "ticker", "sid": 1}},
+			{"id": cmd.ID, "type": "error", "msg": map[string]interface{}{"code": 8, "msg": "Unknown channel name"}},
+		} {
+			body, _ := json.Marshal(frame)
+			conn.WriteMessage(websocket.TextMessage, body)
+		}
+		wsDrain(conn)
+	}))
+	subs, err := ws.Subscribe(wsTestCtx(t), types.SubscribeParams{Channels: []string{"ticker", "bogus"}})
+	var wsErr *WSError
+	if !errors.As(err, &wsErr) || wsErr.Code != 8 {
+		t.Fatalf("err = %v, want *WSError code 8", err)
+	}
+	if len(subs) != 1 || subs[0].Msg.SID != 1 || subs[0].Msg.Channel != "ticker" {
+		t.Fatalf("partial subs = %+v, want the accepted ticker sid", subs)
+	}
+}
+
+func TestWS_Subscribe_MalformedReply(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, func(conn *websocket.Conn) {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var cmd struct {
+			ID int `json:"id"`
+		}
+		json.Unmarshal(data, &cmd)
+		body, _ := json.Marshal(map[string]interface{}{"id": cmd.ID, "type": "subscribed", "msg": "not-an-object"})
+		conn.WriteMessage(websocket.TextMessage, body)
+		wsDrain(conn)
+	}))
+	subs, err := ws.Subscribe(wsTestCtx(t), types.SubscribeParams{Channels: []string{"ticker"}})
+	if err == nil {
+		t.Fatalf("expected decode error, got subs=%+v", subs)
+	}
+	var wsErr *WSError
+	if errors.As(err, &wsErr) {
+		t.Fatalf("decode failure must not be reported as a server *WSError: %v", err)
+	}
+}
+
 func wsTestServer(t *testing.T, handler func(*websocket.Conn)) *httptest.Server {
 	t.Helper()
 	upgrader := websocket.Upgrader{}

@@ -44,7 +44,8 @@ type WSConn struct {
 	readErr     error
 	writeMu     sync.Mutex
 	pendMu      sync.Mutex
-	pending     map[int]chan *wsEnvelope
+	pending     map[int]chan *wsEnvelope   // command replies, by command id
+	snapshots   map[int][]chan *wsEnvelope // get_snapshot waiters, by sid
 	msgChan     chan *types.WSMessage
 	readDone    chan struct{}
 }
@@ -152,6 +153,7 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 		path:        cfg.path,
 		readTimeout: cfg.readTimeout,
 		pending:     make(map[int]chan *wsEnvelope),
+		snapshots:   make(map[int][]chan *wsEnvelope),
 		msgChan:     make(chan *types.WSMessage, cfg.bufferSize),
 		readDone:    make(chan struct{}),
 	}
@@ -230,6 +232,19 @@ func (ws *WSConn) readLoop() {
 				}
 			}
 		}
+		// get_snapshot is answered with orderbook_snapshot frames that carry no
+		// command id, so its waiter is keyed by sid instead.
+		if env.Type == types.WSTypeOrderbookSnapshot && env.SID != 0 {
+			ws.pendMu.Lock()
+			waiters := ws.snapshots[env.SID]
+			ws.pendMu.Unlock()
+			for _, ch := range waiters {
+				select {
+				case ch <- &env:
+				default:
+				}
+			}
+		}
 		msg := &types.WSMessage{Type: env.Type, SID: env.SID, Seq: env.Seq, Msg: env.Msg}
 		select {
 		case ws.msgChan <- msg:
@@ -246,7 +261,13 @@ func (ws *WSConn) drainPending() {
 	for _, ch := range ws.pending {
 		close(ch)
 	}
+	for _, waiters := range ws.snapshots {
+		for _, ch := range waiters {
+			close(ch)
+		}
+	}
 	ws.pending = make(map[int]chan *wsEnvelope)
+	ws.snapshots = make(map[int][]chan *wsEnvelope)
 	ws.pendMu.Unlock()
 }
 
@@ -254,7 +275,12 @@ func (ws *WSConn) nextIDVal() int {
 	return int(ws.nextID.Add(1))
 }
 
-func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, expectCount int) ([]*wsEnvelope, error) {
+// sendAndWait writes payload and collects expectCount id-matched replies. If
+// snapshotSID is non-zero the call also completes on the first
+// orderbook_snapshot frame for that sid, which is how get_snapshot is answered.
+// An error reply ends the wait; the replies collected before it are returned
+// alongside the *WSError so callers can report partial success.
+func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, expectCount int, snapshotSID int) ([]*wsEnvelope, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -266,13 +292,21 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 		return nil, err
 	}
 	ch := make(chan *wsEnvelope, max(expectCount, 1))
+	var snap chan *wsEnvelope // nil blocks forever in the select below
 	ws.pendMu.Lock()
 	ws.pending[id] = ch
+	if snapshotSID != 0 {
+		snap = make(chan *wsEnvelope, 1)
+		ws.snapshots[snapshotSID] = append(ws.snapshots[snapshotSID], snap)
+	}
 	ws.pendMu.Unlock()
 	ws.mu.Unlock()
 	defer func() {
 		ws.pendMu.Lock()
 		delete(ws.pending, id)
+		if snap != nil {
+			ws.removeSnapshotWaiter(snapshotSID, snap)
+		}
 		ws.pendMu.Unlock()
 	}()
 
@@ -292,22 +326,43 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 			return nil, ctx.Err()
 		case <-ws.readDone:
 			return nil, ws.closedErr()
+		case env, ok := <-snap:
+			if !ok {
+				return nil, ws.closedErr()
+			}
+			return []*wsEnvelope{env}, nil
 		case env, ok := <-ch:
 			if !ok {
 				return nil, ws.closedErr()
 			}
-			if env.Type == "error" {
+			if env.Type == types.WSTypeError {
 				var errMsg types.ErrorMsg
 				if len(env.Msg) > 0 {
 					json.Unmarshal(env.Msg, &errMsg)
 				}
-				return nil, &WSError{Code: errMsg.Code, Message: errMsg.Msg}
+				return out, &WSError{Code: errMsg.Code, Message: errMsg.Msg}
 			}
 			out = append(out, env)
 			if expectCount <= 0 || len(out) >= expectCount {
 				return out, nil
 			}
 		}
+	}
+}
+
+// removeSnapshotWaiter must be called with pendMu held.
+func (ws *WSConn) removeSnapshotWaiter(sid int, ch chan *wsEnvelope) {
+	waiters := ws.snapshots[sid]
+	for i, w := range waiters {
+		if w == ch {
+			waiters = append(waiters[:i], waiters[i+1:]...)
+			break
+		}
+	}
+	if len(waiters) == 0 {
+		delete(ws.snapshots, sid)
+	} else {
+		ws.snapshots[sid] = waiters
 	}
 }
 
@@ -318,6 +373,10 @@ func (ws *WSConn) closedErr() error {
 	return ErrWSClosed
 }
 
+// Subscribe sends a subscribe command and returns one SubscribedResponse per
+// channel. The server answers each channel separately, so if it rejects one
+// channel after accepting others the accepted subscriptions are returned
+// together with the *WSError; they are live and must be unsubscribed or used.
 func (ws *WSConn) Subscribe(ctx context.Context, params types.SubscribeParams) ([]types.SubscribedResponse, error) {
 	if len(params.Channels) == 0 {
 		return nil, errors.New("channels required")
@@ -328,24 +387,29 @@ func (ws *WSConn) Subscribe(ctx context.Context, params types.SubscribeParams) (
 		Cmd:    "subscribe",
 		Params: params,
 	}
-	envs, err := ws.sendAndWait(ctx, id, cmd, len(params.Channels))
-	if err != nil {
-		return nil, err
-	}
-	result := make([]types.SubscribedResponse, 0, len(envs))
+	envs, err := ws.sendAndWait(ctx, id, cmd, len(params.Channels), 0)
+	var result []types.SubscribedResponse
 	for _, env := range envs {
-		if env.Type != "subscribed" {
+		if env.Type != types.WSTypeSubscribed {
 			continue
 		}
 		var m types.SubscribedMsg
 		if len(env.Msg) > 0 {
-			json.Unmarshal(env.Msg, &m)
+			if derr := json.Unmarshal(env.Msg, &m); derr != nil {
+				return result, fmt.Errorf("ws: decode subscribed reply: %w", derr)
+			}
 		}
 		result = append(result, types.SubscribedResponse{
 			ID:   env.ID,
-			Type: "subscribed",
+			Type: types.WSTypeSubscribed,
 			Msg:  m,
 		})
+	}
+	if err != nil {
+		return result, err
+	}
+	if result == nil {
+		result = []types.SubscribedResponse{}
 	}
 	return result, nil
 }
@@ -357,14 +421,14 @@ func (ws *WSConn) Unsubscribe(ctx context.Context, sids []int) error {
 	id := ws.nextIDVal()
 	cmd := types.UnsubscribeCommand{ID: id, Cmd: "unsubscribe"}
 	cmd.Params.Sids = sids
-	_, err := ws.sendAndWait(ctx, id, cmd, len(sids))
+	_, err := ws.sendAndWait(ctx, id, cmd, len(sids), 0)
 	return err
 }
 
 func (ws *WSConn) ListSubscriptions(ctx context.Context) (*types.ListSubscriptionsResponse, error) {
 	id := ws.nextIDVal()
 	cmd := types.ListSubscriptionsCommand{ID: id, Cmd: "list_subscriptions"}
-	envs, err := ws.sendAndWait(ctx, id, cmd, 1)
+	envs, err := ws.sendAndWait(ctx, id, cmd, 1, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -376,11 +440,29 @@ func (ws *WSConn) ListSubscriptions(ctx context.Context) (*types.ListSubscriptio
 	list.ID = env.ID
 	list.Type = env.Type
 	if len(env.Msg) > 0 {
-		json.Unmarshal(env.Msg, &list.Msg)
+		if err := json.Unmarshal(env.Msg, &list.Msg); err != nil {
+			return nil, fmt.Errorf("ws: decode list_subscriptions reply: %w", err)
+		}
 	}
 	return &list, nil
 }
 
+// UpdateSubscription sends an update_subscription command and returns the
+// server's reply. The reply Type depends on the action:
+//
+//   - add_markets, delete_markets, subscribe_underlyings, unsubscribe_underlyings,
+//     subscribe_indices, unsubscribe_indices: "ok"; Msg holds the full list
+//     after the update.
+//   - underlying_list / indexlist: "pyth_value_underlying_list" or
+//     "cfbenchmarks_value_indexlist" / "cfbenchmarks_value_5hz_indexlist";
+//     Msg.UnderlyingTickers or Msg.IndexIDs holds the list.
+//   - get_snapshot: the server answers with orderbook_snapshot frames on
+//     Messages(), which carry no command id. The call returns once the first
+//     snapshot for the subscription (or an id-matched ok/error) arrives, with
+//     Type "orderbook_snapshot" and the frame's SID/Seq; the snapshots
+//     themselves are read from Messages().
+//
+// Server-side rejections are returned as *WSError.
 func (ws *WSConn) UpdateSubscription(ctx context.Context, params types.UpdateSubscriptionParams) (*types.OKResponse, error) {
 	switch params.Action {
 	case types.WSUpdateSubscriptionAddMarkets,
@@ -395,9 +477,20 @@ func (ws *WSConn) UpdateSubscription(ctx context.Context, params types.UpdateSub
 	default:
 		return nil, errors.New("action must be add_markets, delete_markets, get_snapshot, subscribe_underlyings, unsubscribe_underlyings, underlying_list, subscribe_indices, unsubscribe_indices, or indexlist")
 	}
+	snapshotSID := 0
+	if params.Action == types.WSUpdateSubscriptionGetSnapshot {
+		switch {
+		case params.SID != nil:
+			snapshotSID = *params.SID
+		case len(params.Sids) == 1:
+			snapshotSID = params.Sids[0]
+		default:
+			return nil, errors.New("get_snapshot requires sid or a single-element sids")
+		}
+	}
 	id := ws.nextIDVal()
 	cmd := types.UpdateSubscriptionCommand{ID: id, Cmd: "update_subscription", Params: params}
-	envs, err := ws.sendAndWait(ctx, id, cmd, 1)
+	envs, err := ws.sendAndWait(ctx, id, cmd, 1, snapshotSID)
 	if err != nil {
 		return nil, err
 	}
@@ -405,14 +498,12 @@ func (ws *WSConn) UpdateSubscription(ctx context.Context, params types.UpdateSub
 		return nil, errors.New("no response")
 	}
 	env := envs[0]
-	var ok types.OKResponse
-	ok.ID = env.ID
-	ok.SID = env.SID
-	ok.Seq = env.Seq
-	ok.Type = env.Type
-	if len(env.Msg) > 0 {
+	ok := types.OKResponse{ID: id, SID: env.SID, Seq: env.Seq, Type: env.Type}
+	if env.Type != types.WSTypeOrderbookSnapshot && len(env.Msg) > 0 {
 		ok.Msg = &types.OKMsg{}
-		json.Unmarshal(env.Msg, ok.Msg)
+		if err := json.Unmarshal(env.Msg, ok.Msg); err != nil {
+			return nil, fmt.Errorf("ws: decode %s reply: %w", env.Type, err)
+		}
 	}
 	return &ok, nil
 }
