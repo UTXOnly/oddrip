@@ -24,6 +24,11 @@ const (
 	defaultWSBufferSize   = 4096
 	defaultWSPingInterval = 30 * time.Second
 	defaultWSReadTimeout  = 90 * time.Second
+	defaultWSWriteTimeout = 10 * time.Second
+	// wsCloseWait bounds how long Close waits for the read loop after the
+	// socket is closed. The read loop exits as soon as the socket does, so
+	// this is a backstop, not an expected wait.
+	wsCloseWait = 5 * time.Second
 )
 
 var (
@@ -33,24 +38,36 @@ var (
 	// ErrWSMalformedFrame is the terminal error when a text frame is not valid
 	// JSON; Err() wraps it with the decode error.
 	ErrWSMalformedFrame = errors.New("websocket malformed frame")
+	// ErrWSWriteTimeout is the terminal error when a command frame could not
+	// be written within WSWriteTimeout or the caller's context deadline,
+	// whichever came first; Err() wraps it with the socket error. A timed-out
+	// write leaves the socket unusable, so the connection is failed and
+	// Messages() closes, the same as ErrWSSlowConsumer.
+	ErrWSWriteTimeout = errors.New("websocket write timeout")
 )
 
 type WSConn struct {
-	conn        *websocket.Conn
-	auth        AuthProvider
-	host        string
-	path        string
-	readTimeout time.Duration
-	nextID      atomic.Int64
-	mu          sync.Mutex
-	closed      bool
-	readErr     error
-	writeMu     sync.Mutex
-	pendMu      sync.Mutex
-	pending     map[int]chan *wsEnvelope   // command replies, by command id
-	snapshots   map[int][]chan *wsEnvelope // get_snapshot waiters, by sid
-	msgChan     chan *types.WSMessage
-	readDone    chan struct{}
+	conn         *websocket.Conn
+	auth         AuthProvider
+	host         string
+	path         string
+	readTimeout  time.Duration
+	writeTimeout time.Duration
+	nextID       atomic.Int64
+	mu           sync.Mutex
+	closed       bool
+	readErr      error
+	// writeSem serializes data-frame writes (gorilla allows one WriteMessage
+	// at a time). It is a 1-slot channel rather than a mutex so a waiter can
+	// give up when its context ends or the connection dies. Control frames
+	// (ping, pong, close) go through WriteControl, which gorilla serializes
+	// internally and which is safe alongside a data write in progress.
+	writeSem  chan struct{}
+	pendMu    sync.Mutex
+	pending   map[int]chan *wsEnvelope   // command replies, by command id
+	snapshots map[int][]chan *wsEnvelope // get_snapshot waiters, by sid
+	msgChan   chan *types.WSMessage
+	readDone  chan struct{}
 }
 
 type wsEnvelope struct {
@@ -70,6 +87,7 @@ type wsOpts struct {
 	bufferSize   int
 	pingInterval time.Duration
 	readTimeout  time.Duration
+	writeTimeout time.Duration
 }
 
 func WSScheme(scheme string) WSOption {
@@ -113,6 +131,17 @@ func WSReadTimeout(d time.Duration) WSOption {
 	}
 }
 
+// WSWriteTimeout bounds every socket write. A command frame that cannot be
+// written within this long (or the caller's context deadline, if sooner)
+// fails the connection with an error wrapping ErrWSWriteTimeout; the close
+// frame sent by Close is bounded by it too. Writes are never unbounded:
+// <= 0 uses the default of 10s.
+func WSWriteTimeout(d time.Duration) WSOption {
+	return func(o *wsOpts) {
+		o.writeTimeout = d
+	}
+}
+
 func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, error) {
 	if c.auth == nil {
 		return nil, ErrWSAuthRequired
@@ -124,6 +153,7 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 		bufferSize:   defaultWSBufferSize,
 		pingInterval: defaultWSPingInterval,
 		readTimeout:  defaultWSReadTimeout,
+		writeTimeout: defaultWSWriteTimeout,
 	}
 	for _, o := range opts {
 		o(&cfg)
@@ -133,6 +163,9 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 	}
 	if cfg.bufferSize <= 0 {
 		cfg.bufferSize = defaultWSBufferSize
+	}
+	if cfg.writeTimeout <= 0 {
+		cfg.writeTimeout = defaultWSWriteTimeout
 	}
 	u := url.URL{Scheme: cfg.scheme, Host: cfg.host, Path: cfg.path}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -150,15 +183,17 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 		return nil, fmt.Errorf("ws dial: %w", err)
 	}
 	ws := &WSConn{
-		conn:        conn,
-		auth:        c.auth,
-		host:        cfg.host,
-		path:        cfg.path,
-		readTimeout: cfg.readTimeout,
-		pending:     make(map[int]chan *wsEnvelope),
-		snapshots:   make(map[int][]chan *wsEnvelope),
-		msgChan:     make(chan *types.WSMessage, cfg.bufferSize),
-		readDone:    make(chan struct{}),
+		conn:         conn,
+		auth:         c.auth,
+		host:         cfg.host,
+		path:         cfg.path,
+		readTimeout:  cfg.readTimeout,
+		writeTimeout: cfg.writeTimeout,
+		writeSem:     make(chan struct{}, 1),
+		pending:      make(map[int]chan *wsEnvelope),
+		snapshots:    make(map[int][]chan *wsEnvelope),
+		msgChan:      make(chan *types.WSMessage, cfg.bufferSize),
+		readDone:     make(chan struct{}),
 	}
 	ws.nextID.Store(1)
 	ws.resetDeadline()
@@ -288,6 +323,9 @@ func (ws *WSConn) nextIDVal() int {
 // orderbook_snapshot frame for that sid, which is how get_snapshot is answered.
 // An error reply ends the wait; the replies collected before it are returned
 // alongside the *WSError so callers can report partial success.
+//
+// The write is bounded by ctx and writeTimeout (see write); nothing here waits
+// past the caller's deadline.
 func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, expectCount int, snapshotSID int) ([]*wsEnvelope, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -318,13 +356,7 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 		ws.pendMu.Unlock()
 	}()
 
-	ws.writeMu.Lock()
-	err = ws.conn.WriteMessage(websocket.TextMessage, data)
-	ws.writeMu.Unlock()
-	if err != nil {
-		if e := ws.Err(); e != nil {
-			return nil, e
-		}
+	if err := ws.write(ctx, data); err != nil {
 		return nil, err
 	}
 	var out []*wsEnvelope
@@ -356,6 +388,63 @@ func (ws *WSConn) sendAndWait(ctx context.Context, id int, payload interface{}, 
 			}
 		}
 	}
+}
+
+// write sends one text frame. Waiting for the write slot is bounded by ctx
+// (and by the connection dying); the socket write itself by the sooner of the
+// ctx deadline and writeTimeout.
+//
+// A caller whose ctx ends while another command holds the slot gets ctx.Err()
+// and the connection is untouched: its frame never started. Once a frame is
+// being written, a timeout from either bound leaves gorilla's writer state
+// corrupt (every later write would fail), so the connection is failed with an
+// error wrapping ErrWSWriteTimeout; Messages() closes and Err() reports it.
+// The caller gets ctx.Err() if its own deadline was the cause, else that
+// error. Other write errors are returned as-is: the read loop surfaces the
+// socket failure behind them on its own. A timeout is the case it cannot see,
+// since a peer that has stopped reading may keep sending.
+func (ws *WSConn) write(ctx context.Context, data []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	select {
+	case ws.writeSem <- struct{}{}:
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-ws.readDone:
+		return ws.closedErr()
+	}
+	defer func() { <-ws.writeSem }()
+
+	deadline := time.Now().Add(ws.writeTimeout)
+	ctxBound := false
+	if d, ok := ctx.Deadline(); ok && d.Before(deadline) {
+		deadline, ctxBound = d, true
+	}
+	ws.conn.SetWriteDeadline(deadline)
+	err := ws.conn.WriteMessage(websocket.TextMessage, data)
+	if err == nil {
+		return nil
+	}
+	if e := ws.Err(); e != nil {
+		return e
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		ws.setErr(fmt.Errorf("%w: %v", ErrWSWriteTimeout, err))
+		ws.conn.Close()
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
+		}
+		if ctxBound {
+			// The socket deadline was the caller's. Its context timer can
+			// fire a moment after the socket's, so ctx.Err() may still be
+			// nil here; the write was cut at that deadline regardless.
+			return context.DeadlineExceeded
+		}
+		return ws.Err()
+	}
+	return err
 }
 
 // removeSnapshotWaiter must be called with pendMu held.
@@ -527,13 +616,22 @@ func (ws *WSConn) Done() <-chan struct{} {
 
 // Err is nil while the connection is healthy. After the read loop exits it is
 // the terminal read error, ErrWSSlowConsumer, an error wrapping
-// ErrWSMalformedFrame, or ErrWSClosed after Close().
+// ErrWSMalformedFrame or ErrWSWriteTimeout, or ErrWSClosed after Close().
 func (ws *WSConn) Err() error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
 	return ws.readErr
 }
 
+// Close sends a close frame, closes the socket, and waits for the read loop
+// to exit. It is idempotent, and pending commands return ErrWSClosed.
+//
+// Close is bounded even when the peer has stopped reading: it returns within
+// about WSWriteTimeout plus five seconds, and in practice as soon as the
+// close frame is written or skipped. The close frame is a control write with
+// its own deadline, so Close never queues behind a command write; if one is
+// in progress the frame is skipped (a jammed socket would not deliver it
+// anyway) and the socket is closed directly, which also unblocks that write.
 func (ws *WSConn) Close() error {
 	ws.mu.Lock()
 	if ws.closed {
@@ -546,21 +644,24 @@ func (ws *WSConn) Close() error {
 		ws.readErr = ErrWSClosed
 	}
 	ws.mu.Unlock()
-	if !healthy {
-		ws.conn.Close()
-		<-ws.readDone
-		return nil
+	var err error
+	if healthy {
+		select {
+		case ws.writeSem <- struct{}{}:
+			err = ws.conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""), time.Now().Add(ws.writeTimeout))
+			<-ws.writeSem
+		default:
+			// A command write is in flight and bounded by its own deadline;
+			// do not wait for it.
+		}
 	}
-	ws.writeMu.Lock()
-	err := ws.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
-	ws.writeMu.Unlock()
-	if e := ws.conn.Close(); e != nil && err == nil {
+	if e := ws.conn.Close(); e != nil && err == nil && healthy {
 		err = e
 	}
 	select {
 	case <-ws.readDone:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(wsCloseWait):
 		return fmt.Errorf("close: read loop did not exit: %w", err)
 	}
 }
