@@ -5,7 +5,7 @@
 Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.30.0** / AsyncAPI **2.0.0**.
 
 ```bash
-go get github.com/UTXOnly/oddrip/oddrip@v0.6.1
+go get github.com/UTXOnly/oddrip/oddrip@v0.6.2
 ```
 
 Go 1.24+. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. `oddrip.Version` matches the module tag.
@@ -68,7 +68,7 @@ for {
 }
 ```
 
-Non-2xx responses are `*oddrip.APIError` with `StatusCode`, `Code`, `Message`, and `RawBody` (first 512 bytes). Kalshi's production error bodies nest `code` / `message` under `"error"` (the spec shows them flat) and parameter-binding 400s use `{"msg": ...}`; all three shapes are parsed. `RequestID` is read from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
+Non-2xx responses are `*oddrip.APIError` with `StatusCode`, `Code`, `Message`, and `RawBody` (first 512 bytes). `Code`, `Message`, and `Details` are decoded from up to 64 KiB of the body; a larger body is not decoded and leaves them empty. Kalshi's production error bodies nest `code` / `message` under `"error"` (the spec shows them flat) and parameter-binding 400s use `{"msg": ...}`; all three shapes are parsed. `RequestID` is read from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
 
 ## Retries
 
@@ -87,7 +87,7 @@ client := oddrip.New(oddrip.RetryConfigOption(oddrip.RetryConfig{MaxAttempts: 1}
 
 ## Concurrent requests
 
-The client is safe for concurrent use. `DoConcurrent(ctx, n, maxInFlight, fn)` runs at most `maxInFlight` calls at once (`0` is unbounded) and returns results in index order. Cancel returns the results collected so far plus `ctx.Err()`.
+The client is safe for concurrent use. `DoConcurrent(ctx, n, maxInFlight, fn)` runs at most `maxInFlight` calls at once (`0` is unbounded) and returns results in index order. A positive `maxInFlight` also caps the worker goroutines at `min(n, maxInFlight)`, so `n` can be large without creating `n` goroutines. Cancel returns the results collected so far plus `ctx.Err()`.
 
 ```go
 results, err := oddrip.DoConcurrent(ctx, len(tickers), 8, func(i int) (*types.GetMarketResponse, error) {
@@ -150,7 +150,8 @@ Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`.
 - `get_snapshot` needs `SID` or a one-element `Sids`. It returns when the first `orderbook_snapshot` for that subscription arrives (`Type` is `"orderbook_snapshot"`); the frames also go to `Messages()`.
 - `indexlist` / `underlying_list` replies are not `Type: "ok"`.
 - A multi-channel `Subscribe` that fails partway returns the accepted SIDs alongside the `*WSError`.
-- `Close` is idempotent. Commands are safe to call concurrently.
+- Every socket write is bounded by `WSWriteTimeout` (default 10s) or the command's context deadline, whichever is sooner. A write that times out fails the connection: `Err()` wraps `ErrWSWriteTimeout` and `Messages()` closes, same as a slow consumer; the command whose own deadline cut the write returns `context.DeadlineExceeded`. A command that gives up while waiting its turn to write returns `ctx.Err()` and leaves the connection healthy.
+- `Close` is idempotent and returns within about `WSWriteTimeout` plus five seconds even if the peer has stopped reading. Commands are safe to call concurrently.
 
 ## Examples
 
