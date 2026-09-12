@@ -1019,9 +1019,12 @@ func TestWS_Close_BoundedWhenSocketFull(t *testing.T) {
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("Close took %v with the socket full and a 200ms write timeout", d)
 	}
+	// The close frame is a few bytes; whether it squeezes into the jammed
+	// send buffer depends on kernel drain timing. Either it fits (nil) or
+	// its control write hits the 200ms deadline; anything else is a bug.
 	var ne net.Error
-	if !errors.As(err, &ne) || !ne.Timeout() {
-		t.Errorf("Close = %v, want the close frame's write timeout", err)
+	if err != nil && (!errors.As(err, &ne) || !ne.Timeout()) {
+		t.Errorf("Close = %v, want nil or the close frame's write timeout", err)
 	}
 	select {
 	case <-ws.Done():
