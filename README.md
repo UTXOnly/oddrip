@@ -5,7 +5,7 @@
 Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.30.0** / AsyncAPI **2.0.0**.
 
 ```bash
-go get github.com/UTXOnly/oddrip/oddrip@v0.6.1
+go get github.com/UTXOnly/oddrip/oddrip@v0.6.2
 ```
 
 Go 1.24+. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. `oddrip.Version` matches the module tag.
@@ -26,7 +26,7 @@ client := oddrip.New(
 )
 ```
 
-Default base URL is `https://api.elections.kalshi.com/trade-api/v2`. The spec lists `https://external-api.kalshi.com/trade-api/v2` as the primary production host and both as supported; pass `oddrip.BaseURL(...)` to switch, or for demo (`https://demo-api.kalshi.co/trade-api/v2`). `oddrip.HTTPClient(...)` swaps the transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM) over `timestamp + METHOD + path` (query string excluded); the same signer is used for REST and the WebSocket handshake.
+Default base URL is `https://external-api.kalshi.com/trade-api/v2`, the production host Kalshi recommends. The older shared host `https://api.elections.kalshi.com/trade-api/v2` (the default before v0.6.2) is still supported; pass `oddrip.BaseURL(...)` to use it, or for demo (`https://demo-api.kalshi.co/trade-api/v2`). Switching hosts does not affect signing — the signed message covers the path only. `oddrip.HTTPClient(...)` swaps the transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM) over `timestamp + METHOD + path` (query string excluded); the same signer is used for REST and the WebSocket handshake.
 
 ## REST
 
@@ -68,7 +68,7 @@ for {
 }
 ```
 
-Non-2xx responses are `*oddrip.APIError` with `StatusCode`, `Code`, `Message`, and `RawBody` (first 512 bytes). Kalshi's production error bodies nest `code` / `message` under `"error"` (the spec shows them flat) and parameter-binding 400s use `{"msg": ...}`; all three shapes are parsed. `RequestID` is read from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
+Non-2xx responses are `*oddrip.APIError` with `StatusCode`, `Code`, `Message`, and `RawBody` (first 512 bytes). `Code`, `Message`, and `Details` are decoded from up to 64 KiB of the body; a larger body is not decoded and leaves them empty. Kalshi's production error bodies nest `code` / `message` under `"error"` (the spec shows them flat) and parameter-binding 400s use `{"msg": ...}`; all three shapes are parsed. `RequestID` is read from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
 
 ## Retries
 
@@ -87,7 +87,7 @@ client := oddrip.New(oddrip.RetryConfigOption(oddrip.RetryConfig{MaxAttempts: 1}
 
 ## Concurrent requests
 
-The client is safe for concurrent use. `DoConcurrent(ctx, n, maxInFlight, fn)` runs at most `maxInFlight` calls at once (`0` is unbounded) and returns results in index order. Cancel returns the results collected so far plus `ctx.Err()`.
+The client is safe for concurrent use. `DoConcurrent(ctx, n, maxInFlight, fn)` runs at most `maxInFlight` calls at once (`0` is unbounded) and returns results in index order. A positive `maxInFlight` also caps the worker goroutines at `min(n, maxInFlight)`, so `n` can be large without creating `n` goroutines. Cancel returns the results collected so far plus `ctx.Err()`.
 
 ```go
 results, err := oddrip.DoConcurrent(ctx, len(tickers), 8, func(i int) (*types.GetMarketResponse, error) {
@@ -141,7 +141,7 @@ if err := conn.Err(); !errors.Is(err, oddrip.ErrWSClosed) {
 }
 ```
 
-Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Command rejections are returned as `*oddrip.WSError`. Default endpoint is `wss://api.elections.kalshi.com/trade-api/ws/v2`; the AsyncAPI names `external-api-ws.kalshi.com` as the production host — both accept connections. Point elsewhere with `WSHost` / `WSPath` / `WSScheme`.
+Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Command rejections are returned as `*oddrip.WSError`. Default endpoint is `wss://external-api-ws.kalshi.com/trade-api/ws/v2`, the production host Kalshi recommends; the older shared `api.elections.kalshi.com` (the default before v0.6.2) still accepts connections. Point elsewhere with `WSHost` / `WSPath` / `WSScheme` — note the recommended REST and WebSocket hosts differ (`external-api` vs `external-api-ws`), so a `BaseURL` override does not imply a `WSHost` one.
 
 - If `Messages()` falls behind, the connection fails with `ErrWSSlowConsumer` (buffer default 4096) rather than dropping deltas. Reconnect and re-snapshot any local book.
 - Errors scoped to a subscription arrive on `Messages()` as `Type: "error"` with a `SID`, not as a returned `*WSError`. Codes 10 (channel error) and 25 (subscription buffer overflow) are terminal for that subscription — resubscribe. Decode into `types.ErrorMsg`.
@@ -150,7 +150,8 @@ Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`.
 - `get_snapshot` needs `SID` or a one-element `Sids`. It returns when the first `orderbook_snapshot` for that subscription arrives (`Type` is `"orderbook_snapshot"`); the frames also go to `Messages()`.
 - `indexlist` / `underlying_list` replies are not `Type: "ok"`.
 - A multi-channel `Subscribe` that fails partway returns the accepted SIDs alongside the `*WSError`.
-- `Close` is idempotent. Commands are safe to call concurrently.
+- Every socket write is bounded by `WSWriteTimeout` (default 10s) or the command's context deadline, whichever is sooner. A write that times out fails the connection: `Err()` wraps `ErrWSWriteTimeout` and `Messages()` closes, same as a slow consumer; the command whose own deadline cut the write returns `context.DeadlineExceeded`. A command that gives up while waiting its turn to write returns `ctx.Err()` and leaves the connection healthy.
+- `Close` is idempotent and returns within about `WSWriteTimeout` plus five seconds even if the peer has stopped reading. Commands are safe to call concurrently.
 
 ## Examples
 
@@ -165,3 +166,7 @@ CI runs `gofmt`, `go mod tidy`, `go vet`, `staticcheck`, `govulncheck`, and `go 
 3. Update the `@vX.Y.Z` pin in this README.
 
 Semver. While at v0, a minor release may break; those changes go first under `### Breaking`. CI runs `gorelease` against the previous tag and refuses a release that has API-incompatible changes without that heading, or that declares one on a patch bump.
+
+## License
+
+MIT — see [LICENSE](LICENSE). `openapi.yaml` and `asyncapi.yaml` are Kalshi's published API specifications ([OpenAPI](https://docs.kalshi.com/openapi.yaml), [AsyncAPI](https://docs.kalshi.com/asyncapi.yaml)), vendored unmodified as the contract this client is built against. They are Kalshi's documents and are not covered by this repository's license; Kalshi's own terms apply to them and to use of the API.

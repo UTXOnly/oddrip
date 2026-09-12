@@ -75,7 +75,13 @@ func wsURLFromBase(baseURL string) (host, path string) {
 	if path == u.Path {
 		path = "/trade-api/ws/v2"
 	}
-	return u.Host, path
+	host = u.Host
+	// The recommended production hosts differ per protocol; the shared and
+	// demo hosts serve both.
+	if host == "external-api.kalshi.com" {
+		host = "external-api-ws.kalshi.com"
+	}
+	return host, path
 }
 
 func logSection(log *os.File, title string, body string) {

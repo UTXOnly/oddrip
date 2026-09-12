@@ -4,6 +4,26 @@ All notable changes to this project are documented here. The client tracks [Kals
 
 **Versioning.** The module follows semver. While it is at major version 0, a **minor** release may contain breaking changes; when it does, they are listed first under a `### Breaking` heading with migration notes, and CI refuses a release that has API-incompatible changes (per `gorelease`) without that section, or that has one on a patch bump. Patch releases never break. From v1.0.0 on, breaking changes require a major bump.
 
+## [0.6.2] — 2026-09-12
+
+Default hosts move to Kalshi's recommended `external-api` endpoints; WebSocket writes and `Close` are bounded; `DoConcurrent` no longer spawns a goroutine per index; long error bodies decode; the repository has a license. No API-incompatible changes.
+
+### Fixed
+
+- **A WebSocket write could block past the caller's deadline and hang `Close`** ([#15](https://github.com/UTXOnly/oddrip/issues/15)). `Subscribe` / `Unsubscribe` / `ListSubscriptions` / `UpdateSubscription` wrote to the socket with no deadline while holding the write lock, so on a wedged or backpressured socket one command blocked indefinitely, every later command queued behind it, context deadlines had no effect, and `Close` never reached its bounded wait. Each frame is now written with the sooner of the context deadline and `WSWriteTimeout` (default 10s), and waiting for the write slot honors the context. A write that times out fails the connection with an error wrapping the new `ErrWSWriteTimeout` (check with `errors.Is`): `Messages()` closes and `Err()` reports it, the same path as `ErrWSSlowConsumer`; the caller whose own deadline cut the write gets `context.DeadlineExceeded`. A caller that gives up waiting for the slot gets `ctx.Err()` and the connection stays healthy. `Close` now sends the close frame as a bounded control write, skips it when a command write is in flight, and returns within about `WSWriteTimeout` plus five seconds even when the peer is not reading.
+- **`DoConcurrent` started one goroutine per index even with a bounded `maxInFlight`** ([#14](https://github.com/UTXOnly/oddrip/issues/14)). The limit gated the active `fn` calls behind a semaphore, but every goroutine was created up front and parked on it, so a large `n` with a small limit still cost `n` goroutine stacks. A positive `maxInFlight` now starts at most `min(n, maxInFlight)` workers that take the next index as their current call returns, and the result buffer is sized to the workers rather than `n`. Results are still index-ordered, and a cancelled context still returns the results collected so far plus `ctx.Err()`, after which workers take no further indices and never block on the result channel. `maxInFlight <= 0` is unchanged (all `n` calls at once), except that a context already cancelled on entry no longer invokes `fn` — matching what bounded mode already did.
+- **`APIError` lost `Code` / `Message` / `Details` when a valid error body exceeded 512 bytes** ([#16](https://github.com/UTXOnly/oddrip/issues/16)). Only the 512-byte `RawBody` snippet was read, and the structured fields were decoded from that truncated buffer, so long validation details or gateway metadata reduced the error to `api error STATUS`. The structured fields are now decoded from up to 64 KiB of the body; `RawBody` is still the first 512 bytes, and bodies over 64 KiB are read no further and are not decoded.
+
+### Changed
+
+- **Default hosts are now `external-api.kalshi.com` (REST) and `external-api-ws.kalshi.com` (WebSocket)** ([#18](https://github.com/UTXOnly/oddrip/issues/18)), the production endpoints Kalshi recommends and the primary hosts in both specs. The shared `api.elections.kalshi.com` host that was the default through 0.6.1 remains supported for both protocols; pass `oddrip.BaseURL("https://api.elections.kalshi.com/trade-api/v2")` and `oddrip.WSHost("api.elections.kalshi.com")` to keep using it. Request signing is unaffected — the signed message is `timestamp + METHOD + path` and excludes the host. If you allowlist egress hosts, add the new ones. The WebSocket example maps `external-api.kalshi.com` in `BASE_URL` to the `-ws` host.
+
+### Added
+
+- `WSWriteTimeout(d)` option (default 10s; `<= 0` uses the default) and `ErrWSWriteTimeout` ([#15](https://github.com/UTXOnly/oddrip/issues/15)).
+- `LICENSE` — MIT ([#17](https://github.com/UTXOnly/oddrip/issues/17)). The vendored `openapi.yaml` / `asyncapi.yaml` are Kalshi's published specifications and are not covered by it; the README says so.
+- **Tests:** `DoConcurrent` goroutine bound at large `n`, cancellation while workers are blocked, `n == 0`; WebSocket write-slot cancellation, cancelled and live callers contending, write timeout as a terminal error, a caller deadline cutting a write, a blocked writer not holding other callers, bounded `Close` with a stuck writer and with a full socket; default REST request destination and WebSocket dial URL; the signed path is identical across the external-api, shared, and demo base URLs; long, malformed, and oversized error bodies through `newAPIError`.
+
 ## [0.6.1] — 2026-09-12
 
 Error bodies from production now decode; specs synced to OpenAPI 3.30.0; four missing query filters; malformed WebSocket frames fail the connection. No API-incompatible changes.

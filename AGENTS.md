@@ -31,8 +31,8 @@ To refresh: `curl -sL -o openapi.yaml https://docs.kalshi.com/openapi.yaml` (sam
 
 Where the spec and production disagree, production wins, and the difference gets documented in the README. Known cases:
 
-- Error bodies. The spec's `ErrorResponse` is flat `{"code","message","details"}`. Production returns `{"error":{"code":...,"message":...}}` for most errors and `{"msg":"..."}` for parameter-binding 400s. `newAPIError` parses all three; keep it that way if the spec changes. `APIError.RawBody` always has the body.
-- Hosts. Spec primary REST host is `external-api.kalshi.com`; `api.elections.kalshi.com` is listed as also supported and is the client default. AsyncAPI names `external-api-ws.kalshi.com`; the client defaults to `api.elections.kalshi.com` for WS too. Both answer.
+- Error bodies. The spec's `ErrorResponse` is flat `{"code","message","details"}`. Production returns `{"error":{"code":...,"message":...}}` for most errors and `{"msg":"..."}` for parameter-binding 400s. `newAPIError` parses all three (from up to 64 KiB of the body); keep it that way if the spec changes. `APIError.RawBody` always has the first 512 bytes.
+- Hosts. The client defaults to the spec's primary hosts: `external-api.kalshi.com` (REST) and `external-api-ws.kalshi.com` (WS). The shared `api.elections.kalshi.com` serves both protocols, is listed as also supported, and was the default before v0.6.2; `BaseURL` / `WSHost` select it.
 - `client_order_id` deduplication is documented in Kalshi's quick-start guide, not in the OpenAPI field description. A replay the server already applied returns 409.
 
 ## Conventions
@@ -47,7 +47,7 @@ Where the spec and production disagree, production wins, and the difference gets
   - `CreateV2` / `BatchCreateV2` pick at runtime based on whether every order has a `client_order_id`.
 - Endpoints whose spec response is empty return `error` only.
 - Prefer fixed-point `_fp` and `_dollars` string fields. Legacy integer price/count fields are being removed by Kalshi; do not add new ones.
-- WebSocket: command replies are matched by `id`; `get_snapshot` is the exception (answered by `orderbook_snapshot` frames keyed by `sid`). Multi-channel `Subscribe` expects one `subscribed` reply per channel. All socket writes go through `writeMu`.
+- WebSocket: command replies are matched by `id`; `get_snapshot` is the exception (answered by `orderbook_snapshot` frames keyed by `sid`). Multi-channel `Subscribe` expects one `subscribed` reply per channel. Data-frame writes go through `writeSem` (a 1-slot channel so waiters can honor their context) and are bounded by `WSWriteTimeout`; control frames use gorilla's `WriteControl`, which serializes itself.
 - Match the surrounding code. No drive-by refactors, reformatting, or comment rewrites in files you are not otherwise changing.
 
 ## Tests are mandatory

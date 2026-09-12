@@ -26,7 +26,7 @@ KALSHI_ACCESS_KEY=$(cat key_id) KALSHI_PRIVATE_KEY_PATH=./private_key.pem go run
 |----------|----------|-------------|
 | `KALSHI_ACCESS_KEY` | for auth | API key ID |
 | `KALSHI_PRIVATE_KEY_PATH` | for auth | Path to the PEM file |
-| `BASE_URL` | no | Default: demo. Production: `https://api.elections.kalshi.com/trade-api/v2` |
+| `BASE_URL` | no | Default: demo. Production: `https://external-api.kalshi.com/trade-api/v2` (or the shared `https://api.elections.kalshi.com/trade-api/v2`) |
 | `LIVE` | no | `1` places two 1¢ bids on the open 15m BTC market (`KXBTC15M`) and cancels the second. Runs against `BASE_URL` (demo unless you set production). Leaves the first order resting. Both orders use fixed `client_order_id`s (`example-resting`, `example-cancel`), so a second run may be rejected with 409. |
 
 Without auth, only public endpoints run.

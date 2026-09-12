@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -86,6 +87,16 @@ func TestConnectWS_Subscribe_Integration(t *testing.T) {
 	}
 	if len(subs) > 0 && (subs[0].Msg.Channel != types.WSChannelTicker || subs[0].Msg.SID != 1) {
 		t.Errorf("subscribed: channel=%s sid=%d", subs[0].Msg.Channel, subs[0].Msg.SID)
+	}
+}
+
+func TestConnectWS_DefaultURL(t *testing.T) {
+	if got, want := wsConfig(nil).url(), "wss://external-api-ws.kalshi.com/trade-api/ws/v2"; got != want {
+		t.Fatalf("default dial URL = %q, want %q", got, want)
+	}
+	// The shared host that was the default through 0.6.1 is an override away.
+	if got, want := wsConfig([]WSOption{WSHost("api.elections.kalshi.com")}).url(), "wss://api.elections.kalshi.com/trade-api/ws/v2"; got != want {
+		t.Fatalf("WSHost override URL = %q, want %q", got, want)
 	}
 }
 
@@ -748,6 +759,347 @@ func TestWS_MalformedFrame_FailsConnection(t *testing.T) {
 	}
 	if err := ws.Close(); err != nil {
 		t.Errorf("Close: %v", err)
+	}
+}
+
+func TestWSWriteTimeout_Option(t *testing.T) {
+	for _, tc := range []struct {
+		opt  time.Duration
+		want time.Duration
+	}{
+		{0, defaultWSWriteTimeout},
+		{-1, defaultWSWriteTimeout},
+		{3 * time.Second, 3 * time.Second},
+	} {
+		ws := wsTestConnect(t, wsTestServer(t, wsDrain), WSWriteTimeout(tc.opt))
+		if ws.writeTimeout != tc.want {
+			t.Errorf("WSWriteTimeout(%v): writeTimeout = %v, want %v", tc.opt, ws.writeTimeout, tc.want)
+		}
+	}
+	ws := wsTestConnect(t, wsTestServer(t, wsDrain))
+	if ws.writeTimeout != defaultWSWriteTimeout {
+		t.Errorf("default writeTimeout = %v, want %v", ws.writeTimeout, defaultWSWriteTimeout)
+	}
+}
+
+// A caller whose context ends while another command holds the write slot gets
+// ctx.Err() without its frame ever starting, and the connection stays healthy
+// for the next command.
+func TestWS_Write_ContextEndsWaitingForSlot(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsSubscribeEcho))
+	params := types.SubscribeParams{Channels: []string{types.WSChannelTicker}}
+	ws.writeSem <- struct{}{} // another command is mid-write
+
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := ws.Subscribe(cancelled, params); err != context.Canceled {
+		t.Fatalf("Subscribe with cancelled ctx = %v, want context.Canceled", err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := ws.Subscribe(ctx, params)
+	if err != context.DeadlineExceeded {
+		t.Fatalf("Subscribe while slot held = %v, want context.DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Subscribe returned after %v, want promptly after its 50ms deadline", d)
+	}
+	if err := ws.Err(); err != nil {
+		t.Fatalf("Err() = %v, want nil: giving up on the slot must not fail the connection", err)
+	}
+	ws.pendMu.Lock()
+	n := len(ws.pending)
+	ws.pendMu.Unlock()
+	if n != 0 {
+		t.Errorf("waiters left registered: %d", n)
+	}
+
+	<-ws.writeSem
+	subs, err := ws.Subscribe(wsTestCtx(t), params)
+	if err != nil || len(subs) != 1 {
+		t.Fatalf("Subscribe after slot released: subs=%+v err=%v", subs, err)
+	}
+}
+
+// Cancelled and live callers contending for the write slot: every live call
+// completes and every cancelled one returns ctx.Err() without being sent.
+func TestWS_Subscribe_ConcurrentWithCancelled(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, wsSubscribeEcho))
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	cancelled, cancelNow := context.WithCancel(ctx)
+	cancelNow()
+
+	const n = 20
+	errs := make([]error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			c := ctx
+			if i%2 == 1 {
+				c = cancelled
+			}
+			subs, err := ws.Subscribe(c, types.SubscribeParams{Channels: []string{fmt.Sprintf("ch%d", i)}})
+			if err == nil && len(subs) != 1 {
+				err = fmt.Errorf("got %d subscribed", len(subs))
+			}
+			errs[i] = err
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if i%2 == 1 {
+			if err != context.Canceled {
+				t.Errorf("cancelled Subscribe %d = %v, want context.Canceled", i, err)
+			}
+		} else if err != nil {
+			t.Errorf("Subscribe %d: %v", i, err)
+		}
+	}
+	if err := ws.Err(); err != nil {
+		t.Errorf("Err() = %v, want nil", err)
+	}
+}
+
+// A write that cannot complete within WSWriteTimeout fails the connection:
+// the command returns an error wrapping ErrWSWriteTimeout, Err() reports it,
+// and Messages() closes, the same path as a slow consumer.
+func TestWS_WriteTimeout_FailsConnection(t *testing.T) {
+	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(200*time.Millisecond))
+	wsJamSocket(t, ws)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := ws.Subscribe(ctx, wsJamParams())
+	if !errors.Is(err, ErrWSWriteTimeout) {
+		t.Fatalf("Subscribe = %v, want ErrWSWriteTimeout", err)
+	}
+	if err == ErrWSWriteTimeout {
+		t.Fatalf("Subscribe should wrap the socket error, got bare sentinel")
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("write failed after %v with a 200ms write timeout", d)
+	}
+	select {
+	case <-ws.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done() did not close")
+	}
+	if e := ws.Err(); !errors.Is(e, ErrWSWriteTimeout) || e == ErrWSWriteTimeout {
+		t.Fatalf("Err() = %v, want wrapped ErrWSWriteTimeout", e)
+	}
+	if _, ok := <-ws.Messages(); ok {
+		t.Error("Messages() not closed")
+	}
+	start = time.Now()
+	if _, serr := ws.Subscribe(wsTestCtx(t), types.SubscribeParams{Channels: []string{types.WSChannelTicker}}); !errors.Is(serr, ErrWSWriteTimeout) {
+		t.Errorf("Subscribe after failure = %v, want ErrWSWriteTimeout", serr)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Subscribe after failure took %v, want immediate", d)
+	}
+	if err := ws.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if e := ws.Err(); !errors.Is(e, ErrWSWriteTimeout) {
+		t.Errorf("Err() after Close = %v, want ErrWSWriteTimeout", e)
+	}
+}
+
+// The caller's context deadline bounds the write too: with the default write
+// timeout, a command with a short deadline against a peer that is not reading
+// returns ctx.Err() at that deadline. The frame was cut off mid-write, which
+// leaves the socket unusable, so the connection is failed as well.
+func TestWS_WriteTimeout_CallerDeadline(t *testing.T) {
+	ws := wsTestConnect(t, wsNoReadServer(t))
+	wsJamSocket(t, ws)
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	_, err := ws.Subscribe(ctx, wsJamParams())
+	if err != context.DeadlineExceeded {
+		t.Fatalf("Subscribe = %v, want context.DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > 3*time.Second {
+		t.Errorf("Subscribe returned after %v with a 200ms deadline", d)
+	}
+	select {
+	case <-ws.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done() did not close")
+	}
+	if e := ws.Err(); !errors.Is(e, ErrWSWriteTimeout) {
+		t.Fatalf("Err() = %v, want ErrWSWriteTimeout", e)
+	}
+}
+
+// While one command's write is blocked in the socket, another command with a
+// shorter deadline gives up on the write slot at that deadline instead of
+// queueing behind the blocked write until it times out.
+func TestWS_Write_BlockedWriterDoesNotHoldOthers(t *testing.T) {
+	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(time.Second))
+	wsJamSocket(t, ws)
+
+	first := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := ws.Subscribe(ctx, wsJamParams())
+		first <- err
+	}()
+	wsWaitSlotHeld(t, ws)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := ws.Subscribe(ctx, types.SubscribeParams{Channels: []string{types.WSChannelTicker}})
+	if err != context.DeadlineExceeded {
+		t.Fatalf("second Subscribe = %v, want context.DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("second Subscribe returned after %v, want promptly after its 100ms deadline", d)
+	}
+	select {
+	case err := <-first:
+		if !errors.Is(err, ErrWSWriteTimeout) {
+			t.Fatalf("blocked Subscribe = %v, want ErrWSWriteTimeout", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("blocked Subscribe did not return")
+	}
+}
+
+// Close does not wait for a command write that is stuck in the socket: it
+// skips the close frame, closes the socket, and that write returns.
+func TestWS_Close_BoundedWithStuckWriter(t *testing.T) {
+	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(2*time.Second))
+	wsJamSocket(t, ws)
+
+	stuck := make(chan error, 1)
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_, err := ws.Subscribe(ctx, wsJamParams())
+		stuck <- err
+	}()
+	wsWaitSlotHeld(t, ws)
+
+	start := time.Now()
+	if err := ws.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Close took %v with a command write stuck", d)
+	}
+	select {
+	case err := <-stuck:
+		if err != ErrWSClosed {
+			t.Errorf("stuck Subscribe after Close = %v, want ErrWSClosed", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stuck Subscribe did not return after Close")
+	}
+	select {
+	case <-ws.Done():
+	default:
+		t.Error("Done() not closed")
+	}
+	if err := ws.Err(); err != ErrWSClosed {
+		t.Errorf("Err() = %v, want ErrWSClosed", err)
+	}
+}
+
+// With the socket already full and no command in flight, the close frame
+// itself cannot be delivered; Close still returns within the write timeout.
+func TestWS_Close_BoundedWhenSocketFull(t *testing.T) {
+	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(200*time.Millisecond))
+	wsJamSocket(t, ws)
+
+	start := time.Now()
+	err := ws.Close()
+	if d := time.Since(start); d > 2*time.Second {
+		t.Errorf("Close took %v with the socket full and a 200ms write timeout", d)
+	}
+	// The close frame is a few bytes; whether it squeezes into the jammed
+	// send buffer depends on kernel drain timing. Either it fits (nil) or
+	// its control write hits the 200ms deadline; anything else is a bug.
+	var ne net.Error
+	if err != nil && (!errors.As(err, &ne) || !ne.Timeout()) {
+		t.Errorf("Close = %v, want nil or the close frame's write timeout", err)
+	}
+	select {
+	case <-ws.Done():
+	default:
+		t.Error("Done() not closed")
+	}
+	if err := ws.Err(); err != ErrWSClosed {
+		t.Errorf("Err() = %v, want ErrWSClosed", err)
+	}
+	if err := ws.Close(); err != nil {
+		t.Errorf("second Close: %v", err)
+	}
+}
+
+// wsJamSocket fills the socket underneath gorilla: it writes raw bytes until
+// the kernel stops accepting them, so the next frame write blocks. Loopback
+// buffers vary by platform (Windows autotunes the receive window to 16MB), so
+// the fill runs until a write times out rather than to a fixed size. The peer
+// never reads, so it does not matter that these bytes are not frames.
+func wsJamSocket(t *testing.T, ws *WSConn) {
+	t.Helper()
+	nc := ws.conn.NetConn()
+	buf := make([]byte, 1<<20)
+	giveUp := time.Now().Add(10 * time.Second)
+	for {
+		nc.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		_, err := nc.Write(buf)
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			break
+		}
+		if err != nil {
+			t.Fatalf("jam write: %v", err)
+		}
+		if time.Now().After(giveUp) {
+			t.Fatal("socket never filled")
+		}
+	}
+	nc.SetWriteDeadline(time.Time{})
+}
+
+// wsJamParams is a command large enough that it cannot slip into whatever
+// room the kernel frees after wsJamSocket, yet cheap to marshal — the payload
+// is built before the write, so its cost must not eat a caller's deadline.
+func wsJamParams() types.SubscribeParams {
+	return types.SubscribeParams{
+		Channels:      []string{types.WSChannelTicker},
+		MarketTickers: []string{strings.Repeat("x", 1<<20)},
+	}
+}
+
+// wsNoReadServer accepts the connection and never reads from it.
+func wsNoReadServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	block := make(chan struct{})
+	t.Cleanup(func() { close(block) })
+	return wsTestServer(t, func(*websocket.Conn) { <-block })
+}
+
+// wsWaitSlotHeld returns once a command holds the write slot.
+func wsWaitSlotHeld(t *testing.T, ws *WSConn) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for len(ws.writeSem) == 0 {
+		if time.Now().After(deadline) {
+			t.Fatal("no command took the write slot")
+		}
+		time.Sleep(time.Millisecond)
 	}
 }
 
