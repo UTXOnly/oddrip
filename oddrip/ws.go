@@ -30,6 +30,9 @@ var (
 	ErrWSClosed       = errors.New("websocket closed")
 	ErrWSAuthRequired = errors.New("websocket requires auth")
 	ErrWSSlowConsumer = errors.New("websocket consumer too slow")
+	// ErrWSMalformedFrame is the terminal error when a text frame is not valid
+	// JSON; Err() wraps it with the decode error.
+	ErrWSMalformedFrame = errors.New("websocket malformed frame")
 )
 
 type WSConn struct {
@@ -219,7 +222,12 @@ func (ws *WSConn) readLoop() {
 		ws.resetDeadline()
 		var env wsEnvelope
 		if err := json.Unmarshal(data, &env); err != nil {
-			continue
+			// The server only sends JSON text frames. Anything else means the
+			// stream is corrupt; fail loudly like the slow-consumer path rather
+			// than skip it and leave the connection looking healthy.
+			ws.setErr(fmt.Errorf("%w: %v", ErrWSMalformedFrame, err))
+			ws.conn.Close()
+			return
 		}
 		if env.ID != 0 {
 			ws.pendMu.Lock()
@@ -518,7 +526,8 @@ func (ws *WSConn) Done() <-chan struct{} {
 }
 
 // Err is nil while the connection is healthy. After the read loop exits it is
-// the terminal read error, ErrWSSlowConsumer, or ErrWSClosed after Close().
+// the terminal read error, ErrWSSlowConsumer, an error wrapping
+// ErrWSMalformedFrame, or ErrWSClosed after Close().
 func (ws *WSConn) Err() error {
 	ws.mu.Lock()
 	defer ws.mu.Unlock()
