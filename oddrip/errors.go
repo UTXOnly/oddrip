@@ -12,6 +12,13 @@ import (
 
 const maxBodySnippet = 512
 
+// APIError is a non-2xx response. StatusCode and RawBody (the first 512 bytes
+// of the body) are always set. Code, Message, and Details are filled from the
+// body when it is one of the shapes Kalshi emits: the spec's flat
+// ErrorResponse, the same object nested under "error" (what production
+// returns for most errors), or {"msg": "..."} (parameter-binding 400s).
+// RequestID is the Request-Id header when present; production does not
+// currently send one.
 type APIError struct {
 	StatusCode int
 	Code       string
@@ -29,16 +36,33 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("api error %d", e.StatusCode)
 }
 
+// errorBody covers every error body shape observed from the API. The flat
+// fields are the spec's ErrorResponse; Error is the production wrapper; Msg is
+// the parameter-binding validator's shape.
+type errorBody struct {
+	types.ErrorResponse
+	Error *types.ErrorResponse `json:"error,omitempty"`
+	Msg   string               `json:"msg,omitempty"`
+}
+
 func newAPIError(resp *http.Response) *APIError {
 	e := &APIError{StatusCode: resp.StatusCode, RequestID: resp.Header.Get("Request-Id")}
 	buf, _ := io.ReadAll(io.LimitReader(resp.Body, maxBodySnippet))
 	e.RawBody = string(buf)
-	var er types.ErrorResponse
-	if json.NewDecoder(bytes.NewReader(buf)).Decode(&er) == nil {
-		e.Code = er.Code
-		e.Message = er.Message
-		e.Details = er.Details
-		e.Service = er.Service
+	var body errorBody
+	if json.NewDecoder(bytes.NewReader(buf)).Decode(&body) != nil {
+		return e
+	}
+	er := body.ErrorResponse
+	if er.Code == "" && er.Message == "" && body.Error != nil {
+		er = *body.Error
+	}
+	e.Code = er.Code
+	e.Message = er.Message
+	e.Details = er.Details
+	e.Service = er.Service
+	if e.Message == "" && body.Msg != "" {
+		e.Message = body.Msg
 	}
 	return e
 }
