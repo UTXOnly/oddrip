@@ -44,7 +44,7 @@ Kalshi uses request signing: you sign each HTTP request (method + path + timesta
 
 ## REST: requests and services
 
-The client exposes services that match the API: `Exchange`, `Markets`, `Events`, `Orders`, `Portfolio`, `Account`, `LiveData`. All calls take `context.Context` (for timeouts and cancellation).
+The client exposes services that match the API: `Exchange`, `Markets`, `Events`, `Series`, `Orders`, `OrderGroups`, `Portfolio`, `Subaccounts`, `Account`, `LiveData`. All calls take `context.Context` (for timeouts and cancellation).
 
 ```go
 ctx := context.Background()
@@ -71,7 +71,11 @@ cal, err := client.LiveData.GetWeatherIndexCalibrations(ctx, "miami")
 
 Minutes where the index quorum failed are absent from `Timeseries`, so gaps in the series are real gaps.
 
-Optional parameters use pointer fields in opts structs (e.g. `Limit *int64`, `Cursor string`). Omit or set to `nil` what you don’t need.
+Optional parameters use pointer fields in opts structs (e.g. `Limit *int64`, `Cursor string`). Omit or set to `nil` what you don’t need. The `ptr` in these examples is not part of the module; it is the usual one-liner:
+
+```go
+func ptr[T any](v T) *T { return &v }
+```
 
 ---
 
@@ -95,7 +99,7 @@ for {
 
 ## Error handling
 
-Non-2xx responses are returned as `*oddrip.APIError`. Use `errors.As` to inspect status, message, and body. This includes the case where every retry attempt was rate-limited or failed server-side: the last response is surfaced as an `APIError` with its real status code (e.g. 429), never as a nil response.
+Non-2xx responses are returned as `*oddrip.APIError`. Use `errors.As` to inspect status, message, and body. This includes the case where every retry attempt was rate-limited or failed server-side: the last response is surfaced as an `APIError` with its real status code (e.g. 429), never as a nil response. A call whose ticker or ID path parameter is empty returns `oddrip.ErrEmptyPathParam` without sending anything — an empty order ID would otherwise turn `CancelV2` into `CancelAll`.
 
 ```go
 if err != nil {
@@ -112,9 +116,16 @@ if err != nil {
 
 ## Retries
 
-The client retries on 429 and 5xx with exponential backoff and jitter. It honors `Retry-After` in both delta-seconds and HTTP-date forms. Backoff waits are cancelled by the request context, so a cancelled or expired `ctx` returns promptly instead of sleeping out the delay. Tune with `RetryConfigOption`; `MaxAttempts` below 1 is treated as 1.
+The client retries with exponential backoff and jitter, up to `MaxAttempts` (default 4), honoring `Retry-After` in both delta-seconds and HTTP-date forms. Backoff waits are cancelled by the request context, so a cancelled or expired `ctx` returns promptly instead of sleeping out the delay. Tune with `RetryConfigOption`; `MaxAttempts` below 1 is treated as 1.
 
-Retries apply to every method, including order creation. Kalshi deduplicates `POST /portfolio/events/orders` on `client_order_id`, so always set one on `CreateOrderV2Request` — it is what makes a retried create idempotent.
+What is retried depends on whether the request is safe to replay:
+
+| Request | 429 | 5xx | Transport error / timeout |
+|---|---|---|---|
+| Idempotent — every GET, PUT, and DELETE (`CancelV2`, `CancelAll`, `BatchCancelV2`, order-group `Reset` / `Trigger` / `Delete` / `UpdateLimit`, `UpdateNetting`), plus POSTs the server deduplicates or that set absolute state: `CreateV2` / `BatchCreateV2` **with `client_order_id` on every order**, `Subaccounts.Transfer` (`client_transfer_id`), `SetTargetBalanceAllocation` | retried | retried | retried |
+| Non-idempotent — `AmendV2`, `DecreaseV2`, `CreateV2` / `BatchCreateV2` without a `client_order_id`, `OrderGroups.Create`, `Subaccounts.Create`, `CreateMarketInMultivariateCollection` | retried | **not retried** | **not retried** |
+
+A 429 means the server rejected the request before acting on it. A 5xx or a dropped connection is ambiguous — the write may already be applied — and replaying a decrease would reduce the order twice, so those are surfaced to you instead. Always set `client_order_id` on creates: it is what makes a retried create place exactly one order. On an ambiguous failure of a non-idempotent write, reconcile with `Orders.Get` before deciding whether to resend.
 
 ```go
 client := oddrip.New(
@@ -209,7 +220,7 @@ Every server message type has a `types.WSType*` constant and a typed `*Msg` stru
 
 **Connection lifecycle.** The connection sends keepalive pings and enforces a read deadline, so a half-open socket is detected within `WSReadTimeout` (default 90s) instead of blocking forever. Messages are never dropped silently: if the consumer of `Messages()` falls behind and the buffer (`WSBufferSize`, default 4096) fills, the connection is failed with `ErrWSSlowConsumer` and closed, because a gap in an `orderbook_delta` stream would otherwise corrupt your local book without warning. Treat `Messages()` closing as "reconnect and re-subscribe"; `Err()` returns the terminal error (`ErrWSClosed` after a clean `Close`, `ErrWSSlowConsumer`, or the underlying read error) and `Done()` is closed when the read loop exits. Options: `WSBufferSize(n)`, `WSPingInterval(d)` (default 30s, `<= 0` disables), `WSReadTimeout(d)` (default 90s, `<= 0` disables). `Close` is idempotent; all commands are safe to call concurrently.
 
-**Commands:** `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription` (add/remove markets, underlyings, or CF Benchmarks indices on a subscription). **Channels** (see `types`): ticker, orderbook_delta, trade, fill, market_positions, market_lifecycle_v2, multivariate_market_lifecycle, communications, order_group_updates, user_orders, pyth_value, cfbenchmarks_value, cfbenchmarks_value_5hz. The cfbenchmarks channels take `IndexIDs` instead of market tickers (`[]string{"all"}` for every index). Server errors come back as `*oddrip.WSError` (Code and Message). Use `oddrip.WSHost`, `oddrip.WSPath`, and `oddrip.WSScheme` to point at a different host or path (e.g. demo).
+**Commands:** `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription` (add/remove markets, underlyings, or CF Benchmarks indices on a subscription; `get_snapshot` re-sends `orderbook_snapshot` frames on `Messages()` and returns once the first one for that subscription arrives). **Channels** (see `types`): ticker, orderbook_delta, trade, fill, market_positions, market_lifecycle_v2, multivariate_market_lifecycle, communications, order_group_updates, user_orders, pyth_value, cfbenchmarks_value, cfbenchmarks_value_5hz. The cfbenchmarks channels take `IndexIDs` instead of market tickers (`[]string{"all"}` for every index). Server errors come back as `*oddrip.WSError` (Code and Message). Use `oddrip.WSHost`, `oddrip.WSPath`, and `oddrip.WSScheme` to point at a different host or path (e.g. demo).
 
 ---
 

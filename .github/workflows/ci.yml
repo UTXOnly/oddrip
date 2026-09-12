@@ -156,14 +156,25 @@ jobs:
       - uses: actions/setup-go@v7
         with:
           go-version: stable
+      # Tag and GitHub release are checked separately so a run that pushed the
+      # tag but failed to create the release is completed by the next push
+      # instead of being skipped as "already tagged".
       - name: resolve version
         id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' oddrip/version.go)
           echo "version=$version" >> "$GITHUB_OUTPUT"
           if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "v$version already tagged"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "v$version" >/dev/null 2>&1; then
             echo "released=true" >> "$GITHUB_OUTPUT"
-            echo "v$version already tagged; nothing to do"
+            echo "v$version already has a GitHub release; nothing to do"
           else
             echo "released=false" >> "$GITHUB_OUTPUT"
           fi
@@ -178,7 +189,7 @@ jobs:
           [ -s notes.md ] || { echo "::error::no CHANGELOG section for ${{ steps.v.outputs.version }}"; exit 1; }
           echo "--- notes.md ---"; cat notes.md
       - name: tag
-        if: steps.v.outputs.released == 'false'
+        if: steps.v.outputs.tagged == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
