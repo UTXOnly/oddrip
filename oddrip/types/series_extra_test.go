@@ -60,6 +60,30 @@ func TestSeries_NullableArrays(t *testing.T) {
 	}
 }
 
+func TestSeries_Categories(t *testing.T) {
+	// OpenAPI 3.30.0: category is the primary category, categories is the full
+	// discovery list the Series.List category filter matches against.
+	const payload = `{"series":{"ticker":"KXHIGHNY","frequency":"daily","title":"NYC high temp","category":"Climate and Weather","categories":["Climate and Weather","Science"],"tags":["Weather"],"settlement_sources":[],"contract_url":"","contract_terms_url":"","fee_type":"quadratic","fee_multiplier":1,"additional_prohibitions":[]}}`
+	var out GetSeriesResponse
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Series.Category != "Climate and Weather" {
+		t.Fatalf("category: %q", out.Series.Category)
+	}
+	if len(out.Series.Categories) != 2 || out.Series.Categories[0] != "Climate and Weather" || out.Series.Categories[1] != "Science" {
+		t.Fatalf("categories: %v", out.Series.Categories)
+	}
+
+	var empty GetSeriesResponse
+	if err := json.Unmarshal([]byte(`{"series":{"ticker":"S","categories":[]}}`), &empty); err != nil {
+		t.Fatal(err)
+	}
+	if empty.Series.Categories == nil || len(empty.Series.Categories) != 0 {
+		t.Fatalf("empty categories should be an empty slice: %#v", empty.Series.Categories)
+	}
+}
+
 func TestCreateOrderGroupRequest_OmitsUnset(t *testing.T) {
 	limit := "10.00"
 	out, err := json.Marshal(CreateOrderGroupRequest{ContractsLimitFp: &limit})

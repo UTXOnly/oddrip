@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/UTXOnly/oddrip/oddrip.svg)](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip)
 
-Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.29.0** / AsyncAPI **2.0.0**.
+Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.30.0** / AsyncAPI **2.0.0**.
 
 ```bash
-go get github.com/UTXOnly/oddrip/oddrip@v0.6.0
+go get github.com/UTXOnly/oddrip/oddrip@v0.6.1
 ```
 
 Go 1.24+. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. `oddrip.Version` matches the module tag.
@@ -26,11 +26,11 @@ client := oddrip.New(
 )
 ```
 
-Default base URL is `https://api.elections.kalshi.com/trade-api/v2`. Pass `oddrip.BaseURL(...)` for demo (`https://demo-api.kalshi.co/trade-api/v2`) or `oddrip.HTTPClient(...)` for a custom transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM); the same signer is used for REST and the WebSocket handshake.
+Default base URL is `https://api.elections.kalshi.com/trade-api/v2`. The spec lists `https://external-api.kalshi.com/trade-api/v2` as the primary production host and both as supported; pass `oddrip.BaseURL(...)` to switch, or for demo (`https://demo-api.kalshi.co/trade-api/v2`). `oddrip.HTTPClient(...)` swaps the transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM) over `timestamp + METHOD + path` (query string excluded); the same signer is used for REST and the WebSocket handshake.
 
 ## REST
 
-Services: `Exchange`, `Markets`, `Events`, `Series`, `Orders`, `OrderGroups`, `Portfolio`, `Subaccounts`, `Account`, `LiveData`. Every call takes `context.Context`. Optional query params are pointer fields on `*Opts` structs — omit or leave nil.
+Services: `Exchange`, `Markets`, `Events`, `Series`, `Orders`, `OrderGroups`, `Portfolio`, `Subaccounts`, `Account`, `LiveData`. Every call takes `context.Context`. Optional query params live on `*Opts` structs: strings are sent only when non-empty, numbers and bools are pointers — leave nil to omit. A nil `*Opts` is fine.
 
 ```go
 status, err := client.Exchange.GetStatus(ctx)
@@ -38,16 +38,17 @@ market, err := client.Markets.Get(ctx, "TICKER-24JAN01")
 events, err := client.Events.List(ctx, &types.GetEventsOpts{Status: "open"})
 
 _, err = client.Orders.CreateV2(ctx, &types.CreateOrderV2Request{
-    Ticker:        "TICKER-24JAN01",
-    ClientOrderID: "cli-1", // set this so retries cannot double-place
-    Side:          types.BookSideBid,
-    Count:         "1.00",
-    Price:         "0.4500",
-    TimeInForce:   types.TimeInForceGTC,
+    Ticker:                  "TICKER-24JAN01",
+    ClientOrderID:           "cli-1", // set this so retries cannot double-place
+    Side:                    types.BookSideBid,
+    Count:                   "1.00",
+    Price:                   "0.4500",
+    TimeInForce:             types.TimeInForceGTC,
+    SelfTradePreventionType: types.SelfTradeTakerAtCross, // required by the API
 })
 ```
 
-64 of 96 OpenAPI paths. Not implemented: RFQ/quotes, FCM, API keys, milestones, search, structured targets, incentive programs. Method list: [pkg.go.dev](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip).
+64 of 96 OpenAPI paths. Not implemented: communications (RFQs, quotes, block-trade proposals), FCM, API keys, milestones and milestone live data (`/live_data/batch`, `/live_data/milestone/*`), search, structured targets, incentive programs, `GET /events/fee_changes`, `POST /portfolio/intra_exchange_instance_transfer`, and `/account/api_usage_level/*`. Method list: [pkg.go.dev](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip).
 
 List responses include `Cursor` when there is another page:
 
@@ -67,18 +68,18 @@ for {
 }
 ```
 
-Non-2xx responses are `*oddrip.APIError` (status, message, request ID, body). An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
+Non-2xx responses are `*oddrip.APIError` with `StatusCode`, `Code`, `Message`, and `RawBody` (first 512 bytes). Kalshi's production error bodies nest `code` / `message` under `"error"` (the spec shows them flat) and parameter-binding 400s use `{"msg": ...}`; all three shapes are parsed. `RequestID` is read from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
 
 ## Retries
 
-Default 4 attempts, exponential backoff with jitter, honors `Retry-After` (delta-seconds or HTTP-date). A cancelled `ctx` aborts the wait. Tune with `RetryConfigOption`; `MaxAttempts` below 1 is treated as 1.
+Default 4 attempts (500ms initial, ×2, ±20% jitter, 30s cap). `Retry-After` (delta-seconds or HTTP-date) replaces the backoff for that attempt, still capped at `MaxDelay`. A cancelled `ctx` aborts the wait. Tune with `RetryConfigOption`; `MaxAttempts` below 1 is treated as 1.
 
 | Request | 429 | 5xx / timeout |
 |---|---|---|
-| Idempotent — GET, PUT, DELETE, and POSTs the server deduplicates (`CreateV2` / `BatchCreateV2` with `client_order_id` on every order, `Subaccounts.Transfer`, `SetTargetBalanceAllocation`) | retried | retried |
+| Idempotent — GET, PUT, DELETE; POSTs the server deduplicates (`CreateV2` / `BatchCreateV2` with `client_order_id` on every order, `Subaccounts.Transfer` via `client_transfer_id`); `SetTargetBalanceAllocation`, which sets absolute state | retried | retried |
 | Non-idempotent — `AmendV2`, `DecreaseV2`, creates without `client_order_id`, `OrderGroups.Create`, `Subaccounts.Create`, `CreateMarketInMultivariateCollection` | retried | not retried |
 
-A 429 means the server rejected the request before acting. A 5xx or dropped connection is ambiguous — the write may already be applied. After an ambiguous failure of a non-idempotent write, check `Orders.Get` before resending.
+A 429 means the server rejected the request before acting. A 5xx or dropped connection is ambiguous — the write may already be applied. After an ambiguous failure of a non-idempotent write, check `Orders.Get` before resending. A replayed `CreateV2` whose first attempt did land is rejected with `409` ("order with this `client_order_id` already exists"), so treat a 409 `*APIError` after a retry as success and look the order up.
 
 ```go
 client := oddrip.New(oddrip.RetryConfigOption(oddrip.RetryConfig{MaxAttempts: 1})) // disable retries
@@ -109,7 +110,7 @@ ts, _ := types.ParseTime("2022-11-22T20:44:01Z")
 
 ## WebSocket
 
-Read-only market data. Auth is required. Place orders over REST.
+Read-only streams: public market data plus your own fills, orders, positions, order-group and RFQ activity. Every connection needs auth, including for public channels. There are no order commands over WebSocket; place orders over REST.
 
 ```go
 conn, err := client.ConnectWS(ctx)
@@ -136,14 +137,16 @@ for msg := range conn.Messages() {
     }
 }
 if err := conn.Err(); !errors.Is(err, oddrip.ErrWSClosed) {
-    // dead socket, slow consumer, or server close: reconnect and re-subscribe
+    // dead socket, slow consumer, malformed frame, or server close: reconnect and re-subscribe
 }
 ```
 
-Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Server errors are `*oddrip.WSError`. Point at demo with `WSHost` / `WSPath` / `WSScheme`.
+Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Command rejections are returned as `*oddrip.WSError`. Default endpoint is `wss://api.elections.kalshi.com/trade-api/ws/v2`; the AsyncAPI names `external-api-ws.kalshi.com` as the production host — both accept connections. Point elsewhere with `WSHost` / `WSPath` / `WSScheme`.
 
 - If `Messages()` falls behind, the connection fails with `ErrWSSlowConsumer` (buffer default 4096) rather than dropping deltas. Reconnect and re-snapshot any local book.
-- Keepalive ping every 30s and a 90s read deadline. `WSReadTimeout(0)` / `WSPingInterval(0)` disable either.
+- Errors scoped to a subscription arrive on `Messages()` as `Type: "error"` with a `SID`, not as a returned `*WSError`. Codes 10 (channel error) and 25 (subscription buffer overflow) are terminal for that subscription — resubscribe. Decode into `types.ErrorMsg`.
+- Client keepalive ping every 30s and a 90s read deadline (Kalshi also pings every 10s; any frame extends the deadline). `WSReadTimeout(0)` / `WSPingInterval(0)` disable either.
+- A text frame that is not valid JSON fails the connection: `Err()` wraps `ErrWSMalformedFrame` and `Messages()` closes, same as a slow consumer.
 - `get_snapshot` needs `SID` or a one-element `Sids`. It returns when the first `orderbook_snapshot` for that subscription arrives (`Type` is `"orderbook_snapshot"`); the frames also go to `Messages()`.
 - `indexlist` / `underlying_list` replies are not `Type: "ok"`.
 - A multi-channel `Subscribe` that fails partway returns the accepted SIDs alongside the `*WSError`.

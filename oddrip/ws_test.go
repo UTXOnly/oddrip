@@ -621,6 +621,136 @@ func TestWS_Subscribe_MalformedReply(t *testing.T) {
 	}
 }
 
+func TestWS_Unsubscribe_OnePerSID(t *testing.T) {
+	// The server confirms each sid separately (AsyncAPI unsubscribedResponse:
+	// {"id":102,"sid":2,"seq":7,"type":"unsubscribed"}), so Unsubscribe waits for
+	// len(sids) id-matched replies.
+	type unsubCmd struct {
+		ID     int    `json:"id"`
+		Cmd    string `json:"cmd"`
+		Params struct {
+			Sids []int `json:"sids"`
+		} `json:"params"`
+	}
+	sent := make(chan unsubCmd, 1)
+	ws := wsTestConnect(t, wsTestServer(t, func(conn *websocket.Conn) {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var cmd unsubCmd
+		json.Unmarshal(data, &cmd)
+		sent <- cmd
+		for i, sid := range cmd.Params.Sids {
+			body, _ := json.Marshal(map[string]interface{}{"id": cmd.ID, "sid": sid, "seq": 7 + i, "type": "unsubscribed"})
+			if conn.WriteMessage(websocket.TextMessage, body) != nil {
+				return
+			}
+		}
+		wsDrain(conn)
+	}))
+
+	start := time.Now()
+	if err := ws.Unsubscribe(wsTestCtx(t), []int{1, 2}); err != nil {
+		t.Fatalf("Unsubscribe: %v", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Unsubscribe took %v", d)
+	}
+	cmd := <-sent
+	if cmd.Cmd != "unsubscribe" || len(cmd.Params.Sids) != 2 || cmd.Params.Sids[0] != 1 || cmd.Params.Sids[1] != 2 {
+		t.Fatalf("command sent: %+v", cmd)
+	}
+	if err := ws.Unsubscribe(wsTestCtx(t), nil); err == nil {
+		t.Fatal("empty sids should be rejected before sending")
+	}
+}
+
+func TestWS_ListSubscriptions_OK(t *testing.T) {
+	// AsyncAPI listSubscriptionsResponse: type is "ok" and msg is an array.
+	ws := wsTestConnect(t, wsTestServer(t, func(conn *websocket.Conn) {
+		_, data, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var cmd struct {
+			ID  int    `json:"id"`
+			Cmd string `json:"cmd"`
+		}
+		json.Unmarshal(data, &cmd)
+		if cmd.Cmd != "list_subscriptions" {
+			return
+		}
+		body, _ := json.Marshal(map[string]interface{}{
+			"id":   cmd.ID,
+			"type": "ok",
+			"msg": []map[string]interface{}{
+				{"channel": "orderbook_delta", "sid": 1},
+				{"channel": "ticker", "sid": 2},
+				{"channel": "fill", "sid": 3},
+			},
+		})
+		conn.WriteMessage(websocket.TextMessage, body)
+		wsDrain(conn)
+	}))
+
+	list, err := ws.ListSubscriptions(wsTestCtx(t))
+	if err != nil {
+		t.Fatalf("ListSubscriptions: %v", err)
+	}
+	if list.Type != types.WSTypeOK || list.ID == 0 {
+		t.Fatalf("reply envelope: %+v", list)
+	}
+	want := []types.ListSubscriptionsItem{{Channel: "orderbook_delta", SID: 1}, {Channel: "ticker", SID: 2}, {Channel: "fill", SID: 3}}
+	if len(list.Msg) != len(want) {
+		t.Fatalf("msg: %+v", list.Msg)
+	}
+	for i := range want {
+		if list.Msg[i] != want[i] {
+			t.Errorf("msg[%d] = %+v, want %+v", i, list.Msg[i], want[i])
+		}
+	}
+}
+
+func TestWS_MalformedFrame_FailsConnection(t *testing.T) {
+	ws := wsTestConnect(t, wsTestServer(t, func(conn *websocket.Conn) {
+		good, _ := json.Marshal(map[string]interface{}{"type": "ticker", "sid": 1, "seq": 1, "msg": map[string]interface{}{"market_ticker": "A"}})
+		if conn.WriteMessage(websocket.TextMessage, good) != nil {
+			return
+		}
+		if conn.WriteMessage(websocket.TextMessage, []byte(`{"type":"ticker","sid":1,`)) != nil {
+			return
+		}
+		wsDrain(conn)
+	}))
+
+	var got []*types.WSMessage
+	for msg := range ws.Messages() {
+		got = append(got, msg)
+	}
+	if len(got) != 1 || got[0].Type != types.WSTypeTicker {
+		t.Fatalf("messages before the bad frame: %+v", got)
+	}
+	select {
+	case <-ws.Done():
+	case <-time.After(2 * time.Second):
+		t.Fatal("Done() did not close")
+	}
+	err := ws.Err()
+	if !errors.Is(err, ErrWSMalformedFrame) {
+		t.Fatalf("Err() = %v, want ErrWSMalformedFrame", err)
+	}
+	if err == ErrWSMalformedFrame {
+		t.Fatalf("Err() should wrap the decode error, got bare sentinel")
+	}
+	if _, err := ws.Subscribe(wsTestCtx(t), types.SubscribeParams{Channels: []string{"ticker"}}); !errors.Is(err, ErrWSMalformedFrame) {
+		t.Fatalf("Subscribe after failure = %v, want ErrWSMalformedFrame", err)
+	}
+	if err := ws.Close(); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
 func wsTestServer(t *testing.T, handler func(*websocket.Conn)) *httptest.Server {
 	t.Helper()
 	upgrader := websocket.Upgrader{}

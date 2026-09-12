@@ -184,6 +184,21 @@ func TestGetIntraExchangeTransfersResponse_Unmarshal(t *testing.T) {
 	}
 }
 
+func TestGetTargetBalanceAllocationResponse_Unmarshal(t *testing.T) {
+	// OpenAPI 3.30.0 adds resting_margin_reservation to the response.
+	const payload = `{"allocations":[{"exchange_index":0,"percent":70},{"exchange_index":1,"percent":30}],"resting_margin_reservation":"max"}`
+	var out GetTargetBalanceAllocationResponse
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		t.Fatal(err)
+	}
+	if len(out.Allocations) != 2 || out.Allocations[1].ExchangeIndex != 1 || out.Allocations[1].Percent != 30 {
+		t.Fatalf("allocations: %+v", out.Allocations)
+	}
+	if out.RestingMarginReservation != RestingMarginReservationMax {
+		t.Fatalf("resting_margin_reservation: %q", out.RestingMarginReservation)
+	}
+}
+
 func TestSetTargetBalanceAllocationRequest_Marshal(t *testing.T) {
 	req := SetTargetBalanceAllocationRequest{
 		Allocations:              []TargetBalanceAllocation{{ExchangeIndex: 0, Percent: 70}, {ExchangeIndex: 1, Percent: 30}},

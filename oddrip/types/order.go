@@ -67,14 +67,15 @@ type GetOrdersResponse struct {
 }
 
 type GetOrdersOpts struct {
-	Ticker      string
-	EventTicker string
-	MinTs       *int64
-	MaxTs       *int64
-	Status      string
-	Limit       *int64
-	Cursor      string
-	Subaccount  *int
+	Ticker        string
+	EventTicker   string
+	MinTs         *int64
+	MaxTs         *int64
+	Status        string
+	Limit         *int64
+	Cursor        string
+	Subaccount    *int
+	ExchangeIndex *int
 }
 
 type CancelOrderResponse struct {

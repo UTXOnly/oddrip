@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The client tracks [Kals
 
 **Versioning.** The module follows semver. While it is at major version 0, a **minor** release may contain breaking changes; when it does, they are listed first under a `### Breaking` heading with migration notes, and CI refuses a release that has API-incompatible changes (per `gorelease`) without that section, or that has one on a patch bump. Patch releases never break. From v1.0.0 on, breaking changes require a major bump.
 
+## [0.6.1] — 2026-09-12
+
+Error bodies from production now decode; specs synced to OpenAPI 3.30.0; four missing query filters; malformed WebSocket frames fail the connection. No API-incompatible changes.
+
+### Fixed
+
+- **`APIError.Code` / `Message` were empty for every production error** ([#7](https://github.com/UTXOnly/oddrip/issues/7)). The body was decoded as the spec's flat `ErrorResponse`, but production returns `{"error":{"code":...,"message":...}}` for most errors and `{"msg":"..."}` for parameter-binding 400s, so `Error()` printed only `api error 404`. All three shapes are parsed now; the flat shape still wins when present. `RawBody` is unchanged.
+- **A WebSocket text frame that was not valid JSON was skipped silently** ([#10](https://github.com/UTXOnly/oddrip/issues/10)). The connection now fails with an error wrapping the new `ErrWSMalformedFrame` (check with `errors.Is`), `Messages()` closes, and pending commands return that error — the same path as `ErrWSSlowConsumer`. Frames received before the bad one are still delivered.
+
+### Added
+
+- Vendored Kalshi OpenAPI **3.30.0** (AsyncAPI remains **2.0.0**; its content change is CF Benchmarks index-ID documentation) ([#8](https://github.com/UTXOnly/oddrip/issues/8)).
+- **Types:** `Series.Categories` — the full discovery-category list; `Series.Category` is now the primary one and the `category` filter on `Series.List` matches any entry in `Categories`. `GetTargetBalanceAllocationResponse.RestingMarginReservation`.
+- **Query filters** ([#9](https://github.com/UTXOnly/oddrip/issues/9)): `ExchangeIndex` on `GetOrdersOpts`, `GetFillsOpts`, `GetPositionsOpts`; `Subaccount` on `GetHistoricalPositionsOpts`. All optional; nil omits the parameter as before.
+- `ErrWSMalformedFrame`.
+- **Tests:** error-body shapes observed from production; `Series.categories` and `resting_margin_reservation` unmarshal; the new filters (set and omitted); malformed-frame failure; `Unsubscribe` one-reply-per-sid and `ListSubscriptions` success paths ([#12](https://github.com/UTXOnly/oddrip/issues/12)).
+
+### Changed
+
+- `APIError` documents which body shapes populate `Code` / `Message`. `RequestID` is still read from `Request-Id`, which production does not currently send.
+
 ## [0.6.0] — 2026-09-12
 
 Fixes retry panics and WebSocket hangs, adds Series / OrderGroups / Subaccounts REST, and aligns typed WS payloads with AsyncAPI 2.0.0.
@@ -38,7 +59,7 @@ Two source-incompatible API changes (the only ones `gorelease -base=v0.5.0` repo
 
 ### Changed
 
-- **WebSocket messages are never dropped silently.** Previously a consumer that fell 256 messages behind lost messages with no signal. Now the buffer is `WSBufferSize(n)` (default 4096) and on overflow the connection fails with `ErrWSSlowConsumer` and closes — a gap in `orderbook_delta` is unrecoverable without a re-snapshot, so failing loudly is correct. Treat `Messages()` closing as "reconnect and re-subscribe".
+- **WebSocket messages are never dropped for a slow consumer.** Previously a consumer that fell 256 messages behind lost messages with no signal. Now the buffer is `WSBufferSize(n)` (default 4096) and on overflow the connection fails with `ErrWSSlowConsumer` and closes — a gap in `orderbook_delta` is unrecoverable without a re-snapshot, so failing loudly is correct. Treat `Messages()` closing as "reconnect and re-subscribe".
 - **WebSocket keepalive and dead-connection detection.** Client pings every `WSPingInterval` (default 30s) and enforces a read deadline of `WSReadTimeout` (default 90s), extended on every frame. A half-open socket now surfaces as a timeout error instead of blocking `Messages()` forever. `<= 0` disables either.
 - **`Close()`** is idempotent and no longer writes a close frame on an already-dead connection. `Subscribe` and friends return `ErrWSClosed` (or the terminal error) immediately after close/disconnect instead of waiting on the context.
 - **`Retry-After`** is honored in HTTP-date form as well as delta-seconds. `RetryConfig.MaxAttempts` below 1 is treated as 1.
