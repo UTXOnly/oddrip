@@ -2,10 +2,10 @@
 
 [![CI](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/UTXOnly/oddrip/oddrip.svg)](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip)
 
-Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.29.0** / AsyncAPI **2.0.0**.
+Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.30.0** / AsyncAPI **2.0.0**.
 
 ```bash
-go get github.com/UTXOnly/oddrip/oddrip@v0.6.0
+go get github.com/UTXOnly/oddrip/oddrip@v0.6.1
 ```
 
 Go 1.24+. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. `oddrip.Version` matches the module tag.
@@ -48,7 +48,7 @@ _, err = client.Orders.CreateV2(ctx, &types.CreateOrderV2Request{
 })
 ```
 
-64 of 96 OpenAPI paths. Not implemented: communications (RFQs, quotes, block-trade proposals), FCM, API keys, milestones and milestone live data (`/live_data/batch`, `/live_data/milestone/*`), search, structured targets, incentive programs, `GET /events/fee_changes`, `POST /portfolio/intra_exchange_instance_transfer`, and `/account/api_usage_level/*`. The optional `exchange_index` filter on `Orders.List` / `Portfolio.GetFills` / `Portfolio.GetPositions` and `subaccount` on `Portfolio.ListHistoricalPositions` are not exposed yet. Method list: [pkg.go.dev](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip).
+64 of 96 OpenAPI paths. Not implemented: communications (RFQs, quotes, block-trade proposals), FCM, API keys, milestones and milestone live data (`/live_data/batch`, `/live_data/milestone/*`), search, structured targets, incentive programs, `GET /events/fee_changes`, `POST /portfolio/intra_exchange_instance_transfer`, and `/account/api_usage_level/*`. Method list: [pkg.go.dev](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip).
 
 List responses include `Cursor` when there is another page:
 
@@ -68,7 +68,7 @@ for {
 }
 ```
 
-Non-2xx responses are `*oddrip.APIError`. `StatusCode` and `RawBody` (first 512 bytes) are always set. `Code` / `Message` are filled only when the body matches the spec's flat `ErrorResponse` (`{"code","message","details"}`); production currently nests them (`{"error":{"code":...,"message":...}}`) and uses `{"msg":...}` for parameter-binding 400s, so read `RawBody` for the detail. `RequestID` comes from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
+Non-2xx responses are `*oddrip.APIError` with `StatusCode`, `Code`, `Message`, and `RawBody` (first 512 bytes). Kalshi's production error bodies nest `code` / `message` under `"error"` (the spec shows them flat) and parameter-binding 400s use `{"msg": ...}`; all three shapes are parsed. `RequestID` is read from a `Request-Id` header Kalshi does not currently send. An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
 
 ## Retries
 
@@ -137,7 +137,7 @@ for msg := range conn.Messages() {
     }
 }
 if err := conn.Err(); !errors.Is(err, oddrip.ErrWSClosed) {
-    // dead socket, slow consumer, or server close: reconnect and re-subscribe
+    // dead socket, slow consumer, malformed frame, or server close: reconnect and re-subscribe
 }
 ```
 
@@ -146,7 +146,7 @@ Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`.
 - If `Messages()` falls behind, the connection fails with `ErrWSSlowConsumer` (buffer default 4096) rather than dropping deltas. Reconnect and re-snapshot any local book.
 - Errors scoped to a subscription arrive on `Messages()` as `Type: "error"` with a `SID`, not as a returned `*WSError`. Codes 10 (channel error) and 25 (subscription buffer overflow) are terminal for that subscription — resubscribe. Decode into `types.ErrorMsg`.
 - Client keepalive ping every 30s and a 90s read deadline (Kalshi also pings every 10s; any frame extends the deadline). `WSReadTimeout(0)` / `WSPingInterval(0)` disable either.
-- A frame that is not valid JSON is skipped without closing the connection.
+- A text frame that is not valid JSON fails the connection: `Err()` wraps `ErrWSMalformedFrame` and `Messages()` closes, same as a slow consumer.
 - `get_snapshot` needs `SID` or a one-element `Sids`. It returns when the first `orderbook_snapshot` for that subscription arrives (`Type` is `"orderbook_snapshot"`); the frames also go to `Messages()`.
 - `indexlist` / `underlying_list` replies are not `Type: "ok"`.
 - A multi-channel `Subscribe` that fails partway returns the accepted SIDs alongside the `*WSError`.

@@ -31,7 +31,7 @@ To refresh: `curl -sL -o openapi.yaml https://docs.kalshi.com/openapi.yaml` (sam
 
 Where the spec and production disagree, production wins, and the difference gets documented in the README. Known cases:
 
-- Error bodies. The spec's `ErrorResponse` is flat `{"code","message","details"}`. Production returns `{"error":{"code":...,"message":...}}` for most errors and `{"msg":"..."}` for parameter-binding 400s. `APIError.RawBody` always has the body.
+- Error bodies. The spec's `ErrorResponse` is flat `{"code","message","details"}`. Production returns `{"error":{"code":...,"message":...}}` for most errors and `{"msg":"..."}` for parameter-binding 400s. `newAPIError` parses all three; keep it that way if the spec changes. `APIError.RawBody` always has the body.
 - Hosts. Spec primary REST host is `external-api.kalshi.com`; `api.elections.kalshi.com` is listed as also supported and is the client default. AsyncAPI names `external-api-ws.kalshi.com`; the client defaults to `api.elections.kalshi.com` for WS too. Both answer.
 - `client_order_id` deduplication is documented in Kalshi's quick-start guide, not in the OpenAPI field description. A replay the server already applied returns 409.
 
