@@ -6,7 +6,7 @@ All notable changes to this project are documented here. The client tracks [Kals
 
 ## [0.6.0] — 2026-09-12
 
-Audit release. Every item under **Fixed** was reproduced with a failing test before the fix; the shipped test suite now exercises retry exhaustion, context cancellation during backoff, multi-channel subscribes, concurrent WebSocket writes, slow consumers, and dead connections.
+Fixes retry panics and WebSocket hangs, adds Series / OrderGroups / Subaccounts REST, and aligns typed WS payloads with AsyncAPI 2.0.0.
 
 ### Breaking
 

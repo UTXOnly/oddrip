@@ -15,9 +15,9 @@ When you add or change **any** of the following, you **must** add or update test
 
 | Change | Test file | Assert |
 |--------|-----------|--------|
-| New/changed REST method | `oddrip/*_test.go` | HTTP path, method, query params, request body when non-trivial |
-| New/changed response/request struct | `oddrip/types/*_test.go` | JSON unmarshal (and marshal if you construct requests) |
-| New WS channel or `update_subscription` action | `oddrip/types/ws_test.go` or `oddrip/ws_test.go` | Constant value and/or JSON round-trip |
+| New/changed REST method | `oddrip/*_test.go` (Series / OrderGroups / Subaccounts and extra Events / Markets / Portfolio methods: `oddrip/services_extra_test.go`) | HTTP path, method, query params, request body when non-trivial |
+| New/changed response/request struct | `oddrip/types/*_test.go` | JSON unmarshal (and marshal if you construct requests). Use the spec example payload, not a fabricated shape. |
+| New WS channel or `update_subscription` action | `oddrip/types/ws_test.go` or `oddrip/ws_test.go` | Constant value and/or JSON round-trip. Command calls that wait on a reply (`Subscribe`, `get_snapshot`) need a test that the call returns. |
 
 Use the existing `mockTransport` pattern in `oddrip/client_test.go`.
 

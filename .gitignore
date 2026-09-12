@@ -21,3 +21,8 @@
 /example
 *.pem
 cmd/example/key_id
+
+# Local working notes — not for the public repo
+*-pre-release-review.md
+*PLAN.md
+PLAN.md
