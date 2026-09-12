@@ -165,3 +165,7 @@ CI runs `gofmt`, `go mod tidy`, `go vet`, `staticcheck`, `govulncheck`, and `go 
 3. Update the `@vX.Y.Z` pin in this README.
 
 Semver. While at v0, a minor release may break; those changes go first under `### Breaking`. CI runs `gorelease` against the previous tag and refuses a release that has API-incompatible changes without that heading, or that declares one on a patch bump.
+
+## License
+
+MIT — see [LICENSE](LICENSE). `openapi.yaml` and `asyncapi.yaml` are Kalshi's published API specifications ([OpenAPI](https://docs.kalshi.com/openapi.yaml), [AsyncAPI](https://docs.kalshi.com/asyncapi.yaml)), vendored unmodified as the contract this client is built against. They are Kalshi's documents and are not covered by this repository's license; Kalshi's own terms apply to them and to use of the API.
