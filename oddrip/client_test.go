@@ -423,9 +423,12 @@ func TestPortfolio_ListHistoricalPositions_RequestPathAndQuery(t *testing.T) {
 	ctx := context.Background()
 	limit := int64(10)
 
+	sub := 2
+
 	_, err := client.Portfolio.ListHistoricalPositions(ctx, &types.GetHistoricalPositionsOpts{
 		Ticker:      "MKT",
 		EventTicker: "EVT",
+		Subaccount:  &sub,
 		Limit:       &limit,
 		Cursor:      "c1",
 	})
@@ -436,8 +439,72 @@ func TestPortfolio_ListHistoricalPositions_RequestPathAndQuery(t *testing.T) {
 		t.Fatalf("path: %v", mt.req)
 	}
 	q := mt.req.URL.Query()
-	if q.Get("ticker") != "MKT" || q.Get("event_ticker") != "EVT" || q.Get("limit") != "10" || q.Get("cursor") != "c1" {
+	if q.Get("ticker") != "MKT" || q.Get("event_ticker") != "EVT" || q.Get("subaccount") != "2" || q.Get("limit") != "10" || q.Get("cursor") != "c1" {
 		t.Fatalf("query: %v", q)
+	}
+}
+
+func TestExchangeIndexFilters(t *testing.T) {
+	// exchange_index is an optional shard filter on these list endpoints; nil
+	// omits it and the server returns every shard.
+	cases := []struct {
+		name string
+		body string
+		path string
+		call func(ctx context.Context, c *Client, idx *int) error
+	}{
+		{
+			name: "Orders.List",
+			body: `{"orders":[],"cursor":""}`,
+			path: "/trade-api/v2/portfolio/orders",
+			call: func(ctx context.Context, c *Client, idx *int) error {
+				_, err := c.Orders.List(ctx, &types.GetOrdersOpts{ExchangeIndex: idx})
+				return err
+			},
+		},
+		{
+			name: "Portfolio.GetFills",
+			body: `{"fills":[],"cursor":""}`,
+			path: "/trade-api/v2/portfolio/fills",
+			call: func(ctx context.Context, c *Client, idx *int) error {
+				_, err := c.Portfolio.GetFills(ctx, &types.GetFillsOpts{ExchangeIndex: idx})
+				return err
+			},
+		},
+		{
+			name: "Portfolio.GetPositions",
+			body: `{"market_positions":[],"event_positions":[],"cursor":""}`,
+			path: "/trade-api/v2/portfolio/positions",
+			call: func(ctx context.Context, c *Client, idx *int) error {
+				_, err := c.Portfolio.GetPositions(ctx, &types.GetPositionsOpts{ExchangeIndex: idx})
+				return err
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			idx := 1
+			mt := &mockTransport{statusCode: 200, body: []byte(tc.body)}
+			client := New(HTTPClient(&http.Client{Transport: mt}))
+			if err := tc.call(context.Background(), client, &idx); err != nil {
+				t.Fatal(err)
+			}
+			if mt.req.URL.Path != tc.path {
+				t.Fatalf("path: %s", mt.req.URL.Path)
+			}
+			if got := mt.req.URL.Query().Get("exchange_index"); got != "1" {
+				t.Fatalf("exchange_index: %q (query %v)", got, mt.req.URL.Query())
+			}
+
+			mt = &mockTransport{statusCode: 200, body: []byte(tc.body)}
+			client = New(HTTPClient(&http.Client{Transport: mt}))
+			if err := tc.call(context.Background(), client, nil); err != nil {
+				t.Fatal(err)
+			}
+			if _, ok := mt.req.URL.Query()["exchange_index"]; ok {
+				t.Fatalf("nil ExchangeIndex should be omitted: %v", mt.req.URL.Query())
+			}
+		})
 	}
 }
 

@@ -45,13 +45,14 @@ type GetFillsResponse struct {
 }
 
 type GetFillsOpts struct {
-	Ticker     string
-	OrderID    string
-	MinTs      *int64
-	MaxTs      *int64
-	Limit      *int64
-	Cursor     string
-	Subaccount *int
+	Ticker        string
+	OrderID       string
+	MinTs         *int64
+	MaxTs         *int64
+	Limit         *int64
+	Cursor        string
+	Subaccount    *int
+	ExchangeIndex *int
 }
 
 type MarketPosition struct {
@@ -81,12 +82,13 @@ type GetPositionsResponse struct {
 }
 
 type GetPositionsOpts struct {
-	Cursor      string
-	Limit       *int
-	CountFilter string
-	Ticker      string
-	EventTicker string
-	Subaccount  *int
+	Cursor        string
+	Limit         *int
+	CountFilter   string
+	Ticker        string
+	EventTicker   string
+	Subaccount    *int
+	ExchangeIndex *int
 }
 
 type BucketLimit struct {
@@ -194,6 +196,7 @@ type GetSettlementsOpts struct {
 type GetHistoricalPositionsOpts struct {
 	Ticker      string
 	EventTicker string
+	Subaccount  *int
 	Limit       *int64
 	Cursor      string
 }
@@ -246,7 +249,8 @@ type TargetBalanceAllocation struct {
 }
 
 type GetTargetBalanceAllocationResponse struct {
-	Allocations []TargetBalanceAllocation `json:"allocations"`
+	Allocations              []TargetBalanceAllocation `json:"allocations"`
+	RestingMarginReservation string                    `json:"resting_margin_reservation"`
 }
 
 // SetTargetBalanceAllocationRequest replaces the caller's allocation. An empty

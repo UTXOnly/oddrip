@@ -31,6 +31,7 @@ func (s *OrdersService) List(ctx context.Context, opts *types.GetOrdersOpts) (*t
 		encodeQueryInt64(v, "limit", opts.Limit)
 		encodeQuery(v, "cursor", opts.Cursor)
 		encodeQueryInt(v, "subaccount", opts.Subaccount)
+		encodeQueryInt(v, "exchange_index", opts.ExchangeIndex)
 	}
 	var out types.GetOrdersResponse
 	if err := s.client.get(ctx, joinPath("portfolio", "orders"), v, &out); err != nil {

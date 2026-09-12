@@ -1,7 +1,7 @@
 openapi: 3.0.0
 info:
   title: Kalshi Trade API Manual Endpoints
-  version: 3.29.0
+  version: 3.30.0
   description: Manually defined OpenAPI spec for endpoints being migrated to spec-first approach
 
 servers:
@@ -339,6 +339,8 @@ paths:
         - name: category
           in: query
           required: false
+          description: >-
+            Return series whose `categories` list contains this value. A series can have more than one discovery category, so the `category` field of a returned series (its primary category) may differ from the filter value. Matching is exact and case-sensitive.
           schema:
             type: string
           x-go-type-skip-optional-pointer: true
@@ -3531,10 +3533,10 @@ paths:
         - name: type
           in: query
           required: false
-          description: 'Type filter. Can be "all", "liquidity", "volume", or "margin_maker_volume". Default is "all".'
+          description: 'Type filter. Can be "all", "liquidity", "volume", "margin_maker_volume", or "margin_taker_volume". Default is "all".'
           schema:
             type: string
-            enum: [all, liquidity, volume, margin_maker_volume]
+            enum: [all, liquidity, volume, margin_maker_volume, margin_taker_volume]
         - name: incentive_description
           in: query
           required: false
@@ -6464,7 +6466,7 @@ components:
           description: The ticker symbol of the market associated with this incentive program
         incentive_type:
           type: string
-          enum: ['liquidity', 'volume', 'margin_maker_volume']
+          enum: ['liquidity', 'volume', 'margin_maker_volume', 'margin_taker_volume']
           description: Type of incentive program
         incentive_description:
           type: string
@@ -6718,11 +6720,14 @@ components:
       type: object
       required:
         - allocations
+        - resting_margin_reservation
       properties:
         allocations:
           type: array
           items:
             $ref: '#/components/schemas/TargetBalanceAllocation'
+        resting_margin_reservation:
+          $ref: '#/components/schemas/RestingMarginReservation'
 
     SetTargetBalanceAllocationRequest:
       type: object
@@ -7224,6 +7229,12 @@ components:
         target_cost_dollars:
           $ref: '#/components/schemas/FixedPointDollars'
           description: Total value of the RFQ in dollars
+        target_cost_excludes_fees:
+          type: boolean
+          description: >-
+            True when the target cost is principal-only and quote sizes are
+            computed without reserving taker fees (fees are charged on top).
+          x-go-type-skip-optional-pointer: true
         status:
           type: string
           description: Current status of the RFQ (open, closed)
@@ -7316,6 +7327,15 @@ components:
         target_cost_dollars:
           $ref: '#/components/schemas/FixedPointDollars'
           description: The target cost for the RFQ in dollars
+          x-go-type-skip-optional-pointer: true
+        target_cost_excludes_fees:
+          type: boolean
+          description: >-
+            Sizes quotes against the target cost as principal only (contracts =
+            target cost / price), with your taker fees charged on top of the
+            target cost. By default (false) the target cost caps principal plus
+            Kalshi fees, and quote sizes are reduced to make room for the fees.
+            Only valid together with a target cost.
           x-go-type-skip-optional-pointer: true
         rest_remainder:
           type: boolean
@@ -7435,6 +7455,13 @@ components:
         rfq_target_cost_dollars:
           $ref: '#/components/schemas/FixedPointDollars'
           description: Total value requested in the RFQ in dollars
+        target_cost_excludes_fees:
+          type: boolean
+          description: >-
+            True when the RFQ's target cost is principal-only and the
+            contracts-offered sizes were computed without reserving taker fees
+            (fees are charged on top of the target cost).
+          x-go-type-skip-optional-pointer: true
         rfq_creator_order_id:
           type: string
           description: Order ID for the RFQ creator (private field)
@@ -8829,6 +8856,7 @@ components:
         - frequency
         - title
         - category
+        - categories
         - tags
         - settlement_sources
         - contract_url
@@ -8848,7 +8876,12 @@ components:
           description: Title describing the series. For full context use you should use this field with the title field of the events belonging to this series.
         category:
           type: string
-          description: Category specifies the category which this series belongs to.
+          description: Category is the primary category of this series.
+        categories:
+          type: array
+          items:
+            type: string
+          description: Categories is the list of discovery categories for this series. The `category` filter on Get Series List matches any entry in this list. May be empty.
         tags:
           type: array
           nullable: true

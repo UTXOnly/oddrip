@@ -36,6 +36,7 @@ func (s *PortfolioService) GetFills(ctx context.Context, opts *types.GetFillsOpt
 		encodeQueryInt64(v, "limit", opts.Limit)
 		encodeQuery(v, "cursor", opts.Cursor)
 		encodeQueryInt(v, "subaccount", opts.Subaccount)
+		encodeQueryInt(v, "exchange_index", opts.ExchangeIndex)
 	}
 	var out types.GetFillsResponse
 	if err := s.client.get(ctx, joinPath("portfolio", "fills"), v, &out); err != nil {
@@ -52,6 +53,7 @@ func (s *PortfolioService) GetPositions(ctx context.Context, opts *types.GetPosi
 		encodeQuery(v, "ticker", opts.Ticker)
 		encodeQuery(v, "event_ticker", opts.EventTicker)
 		encodeQueryInt(v, "subaccount", opts.Subaccount)
+		encodeQueryInt(v, "exchange_index", opts.ExchangeIndex)
 		if opts.Limit != nil {
 			v.Set("limit", fmt.Sprintf("%d", *opts.Limit))
 		}
@@ -116,6 +118,7 @@ func (s *PortfolioService) ListHistoricalPositions(ctx context.Context, opts *ty
 	if opts != nil {
 		encodeQuery(v, "ticker", opts.Ticker)
 		encodeQuery(v, "event_ticker", opts.EventTicker)
+		encodeQueryInt(v, "subaccount", opts.Subaccount)
 		encodeQueryInt64(v, "limit", opts.Limit)
 		encodeQuery(v, "cursor", opts.Cursor)
 	}

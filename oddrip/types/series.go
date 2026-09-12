@@ -7,11 +7,15 @@ const (
 	FeeTypeFlat                        = "flat"
 )
 
+// Series is one series. Category is the primary discovery category;
+// Categories is the full list, which is what the category filter on
+// Series.List matches against.
 type Series struct {
 	Ticker                 string                 `json:"ticker"`
 	Frequency              string                 `json:"frequency"`
 	Title                  string                 `json:"title"`
 	Category               string                 `json:"category"`
+	Categories             []string               `json:"categories"`
 	Tags                   []string               `json:"tags"`
 	SettlementSources      []SettlementSource     `json:"settlement_sources"`
 	ContractURL            string                 `json:"contract_url"`
