@@ -26,7 +26,7 @@ client := oddrip.New(
 )
 ```
 
-Default base URL is `https://api.elections.kalshi.com/trade-api/v2`. The spec lists `https://external-api.kalshi.com/trade-api/v2` as the primary production host and both as supported; pass `oddrip.BaseURL(...)` to switch, or for demo (`https://demo-api.kalshi.co/trade-api/v2`). `oddrip.HTTPClient(...)` swaps the transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM) over `timestamp + METHOD + path` (query string excluded); the same signer is used for REST and the WebSocket handshake.
+Default base URL is `https://external-api.kalshi.com/trade-api/v2`, the production host Kalshi recommends. The older shared host `https://api.elections.kalshi.com/trade-api/v2` (the default before v0.6.2) is still supported; pass `oddrip.BaseURL(...)` to use it, or for demo (`https://demo-api.kalshi.co/trade-api/v2`). Switching hosts does not affect signing — the signed message covers the path only. `oddrip.HTTPClient(...)` swaps the transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM) over `timestamp + METHOD + path` (query string excluded); the same signer is used for REST and the WebSocket handshake.
 
 ## REST
 
@@ -141,7 +141,7 @@ if err := conn.Err(); !errors.Is(err, oddrip.ErrWSClosed) {
 }
 ```
 
-Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Command rejections are returned as `*oddrip.WSError`. Default endpoint is `wss://api.elections.kalshi.com/trade-api/ws/v2`; the AsyncAPI names `external-api-ws.kalshi.com` as the production host — both accept connections. Point elsewhere with `WSHost` / `WSPath` / `WSScheme`.
+Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Command rejections are returned as `*oddrip.WSError`. Default endpoint is `wss://external-api-ws.kalshi.com/trade-api/ws/v2`, the production host Kalshi recommends; the older shared `api.elections.kalshi.com` (the default before v0.6.2) still accepts connections. Point elsewhere with `WSHost` / `WSPath` / `WSScheme` — note the recommended REST and WebSocket hosts differ (`external-api` vs `external-api-ws`), so a `BaseURL` override does not imply a `WSHost` one.
 
 - If `Messages()` falls behind, the connection fails with `ErrWSSlowConsumer` (buffer default 4096) rather than dropping deltas. Reconnect and re-snapshot any local book.
 - Errors scoped to a subscription arrive on `Messages()` as `Type: "error"` with a `SID`, not as a returned `*WSError`. Codes 10 (channel error) and 25 (subscription buffer overflow) are terminal for that subscription — resubscribe. Decode into `types.ErrorMsg`.

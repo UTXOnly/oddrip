@@ -17,7 +17,7 @@ import (
 	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
-const defaultWSHost = "api.elections.kalshi.com"
+const defaultWSHost = "external-api-ws.kalshi.com"
 const defaultWSPath = "/trade-api/ws/v2"
 
 const (
@@ -142,10 +142,8 @@ func WSWriteTimeout(d time.Duration) WSOption {
 	}
 }
 
-func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, error) {
-	if c.auth == nil {
-		return nil, ErrWSAuthRequired
-	}
+// wsConfig applies opts over the defaults and normalizes them.
+func wsConfig(opts []WSOption) wsOpts {
 	cfg := wsOpts{
 		scheme:       "wss",
 		host:         defaultWSHost,
@@ -167,8 +165,21 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 	if cfg.writeTimeout <= 0 {
 		cfg.writeTimeout = defaultWSWriteTimeout
 	}
-	u := url.URL{Scheme: cfg.scheme, Host: cfg.host, Path: cfg.path}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	return cfg
+}
+
+// url is the dial destination.
+func (o wsOpts) url() string {
+	return (&url.URL{Scheme: o.scheme, Host: o.host, Path: o.path}).String()
+}
+
+func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, error) {
+	if c.auth == nil {
+		return nil, ErrWSAuthRequired
+	}
+	cfg := wsConfig(opts)
+	u := cfg.url()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +189,7 @@ func (c *Client) ConnectWS(ctx context.Context, opts ...WSOption) (*WSConn, erro
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 10 * time.Second,
 	}
-	conn, _, err := dialer.DialContext(ctx, u.String(), req.Header)
+	conn, _, err := dialer.DialContext(ctx, u, req.Header)
 	if err != nil {
 		return nil, fmt.Errorf("ws dial: %w", err)
 	}

@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/UTXOnly/oddrip/oddrip/internal/auth"
 	"github.com/UTXOnly/oddrip/oddrip/types"
 )
 
@@ -961,5 +962,49 @@ func TestRetryPolicy_TransportError(t *testing.T) {
 	}
 	if got := atomic.LoadInt32(calls); got != 1 {
 		t.Fatalf("DecreaseV2 attempts = %d, want 1 (no replay)", got)
+	}
+}
+
+func TestDefaultBaseURL(t *testing.T) {
+	mt := &mockTransport{statusCode: 200, body: []byte(`{"exchange_active":true,"trading_active":true}`)}
+	client := New(HTTPClient(&http.Client{Transport: mt}))
+	if _, err := client.Exchange.GetStatus(context.Background()); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got, want := mt.req.URL.String(), "https://external-api.kalshi.com/trade-api/v2/exchange/status"; got != want {
+		t.Fatalf("request URL = %q, want %q", got, want)
+	}
+}
+
+// The signed message is timestamp + METHOD + path, so switching hosts (the
+// recommended external-api host, the shared api.elections host, demo) must
+// not change what is signed.
+func TestSignedPathExcludesHost(t *testing.T) {
+	var signed []string
+	signer := &auth.KalshiSigner{KeyID: "k", SignRequest: func(method, path string, _ int64) (string, error) {
+		signed = append(signed, method+" "+path)
+		return "sig", nil
+	}}
+	for _, base := range []string{"", "https://api.elections.kalshi.com/trade-api/v2", "https://demo-api.kalshi.co/trade-api/v2/"} {
+		mt := &mockTransport{statusCode: 200, body: []byte(`{"balance":0}`)}
+		opts := []Option{HTTPClient(&http.Client{Transport: mt}), Auth(signer)}
+		if base != "" {
+			opts = append(opts, BaseURL(base))
+		}
+		client := New(opts...)
+		if _, err := client.Portfolio.GetBalance(context.Background(), nil); err != nil {
+			t.Fatalf("base %q: unexpected error: %v", base, err)
+		}
+		if got := mt.req.Header.Get("KALSHI-ACCESS-SIGNATURE"); got != "sig" {
+			t.Fatalf("base %q: signature header = %q", base, got)
+		}
+	}
+	for i, got := range signed {
+		if want := "GET /trade-api/v2/portfolio/balance"; got != want {
+			t.Fatalf("signed[%d] = %q, want %q", i, got, want)
+		}
+	}
+	if len(signed) != 3 {
+		t.Fatalf("signed %d requests, want 3", len(signed))
 	}
 }

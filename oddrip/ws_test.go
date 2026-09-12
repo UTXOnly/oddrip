@@ -90,6 +90,16 @@ func TestConnectWS_Subscribe_Integration(t *testing.T) {
 	}
 }
 
+func TestConnectWS_DefaultURL(t *testing.T) {
+	if got, want := wsConfig(nil).url(), "wss://external-api-ws.kalshi.com/trade-api/ws/v2"; got != want {
+		t.Fatalf("default dial URL = %q, want %q", got, want)
+	}
+	// The shared host that was the default through 0.6.1 is an override away.
+	if got, want := wsConfig([]WSOption{WSHost("api.elections.kalshi.com")}).url(), "wss://api.elections.kalshi.com/trade-api/ws/v2"; got != want {
+		t.Fatalf("WSHost override URL = %q, want %q", got, want)
+	}
+}
+
 func TestConnectWS_DialFails(t *testing.T) {
 	client := New(Auth(&mockWSAuth{}))
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

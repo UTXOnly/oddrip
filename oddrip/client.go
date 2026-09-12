@@ -15,7 +15,7 @@ import (
 	"github.com/UTXOnly/oddrip/oddrip/internal/retry"
 )
 
-const defaultBaseURL = "https://api.elections.kalshi.com/trade-api/v2"
+const defaultBaseURL = "https://external-api.kalshi.com/trade-api/v2"
 
 type RetryConfig struct {
 	MaxAttempts   int
