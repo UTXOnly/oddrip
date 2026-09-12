@@ -2,147 +2,91 @@
 
 [![CI](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/UTXOnly/oddrip/actions/workflows/ci.yml) [![Go Reference](https://pkg.go.dev/badge/github.com/UTXOnly/oddrip/oddrip.svg)](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip)
 
-Go client for the [Kalshi Trade API](https://docs.kalshi.com/openapi.yaml): REST for orders, portfolio, markets, events, and exchange info, plus WebSocket for real-time market data (ticker, orderbook, trades, fills, and related channels). One library, same auth; use REST to trade and WebSocket to stream.
-
-REST coverage: **Exchange** (status, schedule, user_data_timestamp, historical cutoff, series fee changes), **Markets** (list, get, orderbook, **orderbooks**, trades, **historical** list/get/trades/candlesticks), **Events** (list, list multivariate, get, get metadata per [Get Events](https://docs.kalshi.com/api-reference/events/get-events)), **Orders** (list, get, queue positions, **V2 event orders** create/cancel/cancel-all/amend/decrease/batch), **Portfolio** (balance, fills, positions, **settlements**, **deposits**, **withdrawals**, **intra-exchange transfers**, **target balance allocation**, **historical** fills/orders/positions), **Account** (API limits, **endpoint costs**), **Live data** (**weather index** and calibrations, event live data), **Series** (list, get, per-series **market and event candlesticks**, forecast percentile history), **Order groups** (list/create/get/delete/reset/trigger/limit), **Subaccounts** (create, balances, transfer, transfer history, netting). Also `Markets.GetCandlesticks` (batch), `Portfolio.GetTotalRestingOrderValue`, and multivariate event collections on `Events` (list/get/`CreateMarketInMultivariateCollection`). 66 of the 96 paths in the vendored spec are covered; communications (RFQ/quotes), milestones, API-key management, FCM, and search remain unimplemented. See `CHANGELOG.md` and [Kalshi changelog](https://docs.kalshi.com/changelog) for API-facing changes.
-
-Module path: `github.com/UTXOnly/oddrip`. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. Current release **v0.6.0** — pin with `go get github.com/UTXOnly/oddrip/oddrip@v0.6.0`; runtime string `oddrip.Version` matches the module tag.
-
----
-
-## Install
+Go client for the [Kalshi Trade API](https://docs.kalshi.com/): REST plus WebSocket market data. Tracks vendored OpenAPI **3.29.0** / AsyncAPI **2.0.0**.
 
 ```bash
-go get github.com/UTXOnly/oddrip/oddrip@latest
-# or pin: go get github.com/UTXOnly/oddrip/oddrip@v0.6.0
+go get github.com/UTXOnly/oddrip/oddrip@v0.6.0
 ```
 
----
+Go 1.24+. Import the client as `github.com/UTXOnly/oddrip/oddrip` and types as `github.com/UTXOnly/oddrip/oddrip/types`. `oddrip.Version` matches the module tag.
 
-## Initialize client
+## Client
 
 ```go
-import (
-    "github.com/UTXOnly/oddrip/oddrip"
-    "github.com/UTXOnly/oddrip/oddrip/types"
-)
+client := oddrip.New() // public endpoints
+```
 
-// Public endpoints only (no auth)
-client := oddrip.New()
-
-// Authenticated: API key + RSA-PSS request signing (required for orders, portfolio, WebSocket)
-key, _ := oddrip.ParsePrivateKeyFromPEM(privateKeyPEM)
+```go
+key, err := oddrip.ParsePrivateKeyFromPEM(privateKeyPEM)
+if err != nil {
+    return err
+}
 client := oddrip.New(
     oddrip.Auth(oddrip.NewKalshiSigner(apiKeyID, key)),
-    oddrip.BaseURL("https://api.elections.kalshi.com/trade-api/v2"),
 )
 ```
 
-Kalshi uses request signing: you sign each HTTP request (method + path + timestamp) with your private key. Use `ParsePrivateKeyFromPEM` for PKCS#8 or PKCS#1 PEM; pass the key and key ID to `NewKalshiSigner`. The same auth is used for REST and for the WebSocket handshake.
+Default base URL is `https://api.elections.kalshi.com/trade-api/v2`. Pass `oddrip.BaseURL(...)` for demo (`https://demo-api.kalshi.co/trade-api/v2`) or `oddrip.HTTPClient(...)` for a custom transport. Auth is RSA-PSS (PKCS#8 or PKCS#1 PEM); the same signer is used for REST and the WebSocket handshake.
 
----
+## REST
 
-## REST: requests and services
-
-The client exposes services that match the API: `Exchange`, `Markets`, `Events`, `Series`, `Orders`, `OrderGroups`, `Portfolio`, `Subaccounts`, `Account`, `LiveData`. All calls take `context.Context` (for timeouts and cancellation).
+Services: `Exchange`, `Markets`, `Events`, `Series`, `Orders`, `OrderGroups`, `Portfolio`, `Subaccounts`, `Account`, `LiveData`. Every call takes `context.Context`. Optional query params are pointer fields on `*Opts` structs — omit or leave nil.
 
 ```go
-ctx := context.Background()
-
 status, err := client.Exchange.GetStatus(ctx)
 market, err := client.Markets.Get(ctx, "TICKER-24JAN01")
 events, err := client.Events.List(ctx, &types.GetEventsOpts{Status: "open"})
-orders, err := client.Orders.List(ctx, &types.GetOrdersOpts{Status: "resting"})
-balance, err := client.Portfolio.GetBalance(ctx, nil)
-```
 
-Weather markets are priced off Kalshi's own city temperature index; `LiveData` serves that index and the calibration timeline behind it.
-
-```go
-// Last hour of the Miami index, with each station's reading and QC disposition.
-index, err := client.LiveData.GetWeatherIndex(ctx, "miami", &types.GetWeatherIndexOpts{
-    LastSec:  ptr(int64(3600)),
-    Detailed: ptr(true),
+_, err = client.Orders.CreateV2(ctx, &types.CreateOrderV2Request{
+    Ticker:        "TICKER-24JAN01",
+    ClientOrderID: "cli-1", // set this so retries cannot double-place
+    Side:          types.BookSideBid,
+    Count:         "1.00",
+    Price:         "0.4500",
+    TimeInForce:   types.TimeInForceGTC,
 })
-
-// Station weights and offsets used to compute those values.
-cal, err := client.LiveData.GetWeatherIndexCalibrations(ctx, "miami")
 ```
 
-Minutes where the index quorum failed are absent from `Timeseries`, so gaps in the series are real gaps.
+64 of 96 OpenAPI paths. Not implemented: RFQ/quotes, FCM, API keys, milestones, search, structured targets, incentive programs. Method list: [pkg.go.dev](https://pkg.go.dev/github.com/UTXOnly/oddrip/oddrip).
 
-Optional parameters use pointer fields in opts structs (e.g. `Limit *int64`, `Cursor string`). Omit or set to `nil` what you don’t need. The `ptr` in these examples is not part of the module; it is the usual one-liner:
-
-```go
-func ptr[T any](v T) *T { return &v }
-```
-
----
-
-## Pagination
-
-List endpoints return a `Cursor` when there are more results. Pass it back on the next call.
+List responses include `Cursor` when there is another page:
 
 ```go
-var all []types.Market
-opts := &types.GetMarketsOpts{Limit: ptr(int64(100))}
+limit := int64(100)
+opts := &types.GetMarketsOpts{Limit: &limit}
 for {
     resp, err := client.Markets.List(ctx, opts)
-    if err != nil { return err }
-    all = append(all, resp.Markets...)
-    if resp.Cursor == "" { break }
+    if err != nil {
+        return err
+    }
+    // ...
+    if resp.Cursor == "" {
+        break
+    }
     opts.Cursor = resp.Cursor
 }
 ```
 
----
-
-## Error handling
-
-Non-2xx responses are returned as `*oddrip.APIError`. Use `errors.As` to inspect status, message, and body. This includes the case where every retry attempt was rate-limited or failed server-side: the last response is surfaced as an `APIError` with its real status code (e.g. 429), never as a nil response. A call whose ticker or ID path parameter is empty returns `oddrip.ErrEmptyPathParam` without sending anything — an empty order ID would otherwise turn `CancelV2` into `CancelAll`.
-
-```go
-if err != nil {
-    var apiErr *oddrip.APIError
-    if errors.As(err, &apiErr) {
-        fmt.Println(apiErr.StatusCode, apiErr.Message, apiErr.RequestID)
-        fmt.Println(apiErr.RawBody)
-    }
-    return err
-}
-```
-
----
+Non-2xx responses are `*oddrip.APIError` (status, message, request ID, body). An empty ticker or ID path parameter returns `oddrip.ErrEmptyPathParam` without sending — an empty order ID would otherwise hit CancelAll.
 
 ## Retries
 
-The client retries with exponential backoff and jitter, up to `MaxAttempts` (default 4), honoring `Retry-After` in both delta-seconds and HTTP-date forms. Backoff waits are cancelled by the request context, so a cancelled or expired `ctx` returns promptly instead of sleeping out the delay. Tune with `RetryConfigOption`; `MaxAttempts` below 1 is treated as 1.
+Default 4 attempts, exponential backoff with jitter, honors `Retry-After` (delta-seconds or HTTP-date). A cancelled `ctx` aborts the wait. Tune with `RetryConfigOption`; `MaxAttempts` below 1 is treated as 1.
 
-What is retried depends on whether the request is safe to replay:
+| Request | 429 | 5xx / timeout |
+|---|---|---|
+| Idempotent — GET, PUT, DELETE, and POSTs the server deduplicates (`CreateV2` / `BatchCreateV2` with `client_order_id` on every order, `Subaccounts.Transfer`, `SetTargetBalanceAllocation`) | retried | retried |
+| Non-idempotent — `AmendV2`, `DecreaseV2`, creates without `client_order_id`, `OrderGroups.Create`, `Subaccounts.Create`, `CreateMarketInMultivariateCollection` | retried | not retried |
 
-| Request | 429 | 5xx | Transport error / timeout |
-|---|---|---|---|
-| Idempotent — every GET, PUT, and DELETE (`CancelV2`, `CancelAll`, `BatchCancelV2`, order-group `Reset` / `Trigger` / `Delete` / `UpdateLimit`, `UpdateNetting`), plus POSTs the server deduplicates or that set absolute state: `CreateV2` / `BatchCreateV2` **with `client_order_id` on every order**, `Subaccounts.Transfer` (`client_transfer_id`), `SetTargetBalanceAllocation` | retried | retried | retried |
-| Non-idempotent — `AmendV2`, `DecreaseV2`, `CreateV2` / `BatchCreateV2` without a `client_order_id`, `OrderGroups.Create`, `Subaccounts.Create`, `CreateMarketInMultivariateCollection` | retried | **not retried** | **not retried** |
-
-A 429 means the server rejected the request before acting on it. A 5xx or a dropped connection is ambiguous — the write may already be applied — and replaying a decrease would reduce the order twice, so those are surfaced to you instead. Always set `client_order_id` on creates: it is what makes a retried create place exactly one order. On an ambiguous failure of a non-idempotent write, reconcile with `Orders.Get` before deciding whether to resend.
+A 429 means the server rejected the request before acting. A 5xx or dropped connection is ambiguous — the write may already be applied. After an ambiguous failure of a non-idempotent write, check `Orders.Get` before resending.
 
 ```go
-client := oddrip.New(
-    oddrip.RetryConfigOption(oddrip.RetryConfig{
-        MaxAttempts:   5,
-        InitialDelay:  1 * time.Second,
-        MaxDelay:      60 * time.Second,
-        JitterPercent: 0.2,
-    }),
-)
+client := oddrip.New(oddrip.RetryConfigOption(oddrip.RetryConfig{MaxAttempts: 1})) // disable retries
 ```
-
----
 
 ## Concurrent requests
 
-The client is safe for concurrent use. `DoConcurrent` fans out `n` calls with at most `maxInFlight` running at once (pass `0` for unbounded) and returns results in index order; each result carries its own error. If `ctx` is cancelled, the results collected so far are returned along with `ctx.Err()`.
+The client is safe for concurrent use. `DoConcurrent(ctx, n, maxInFlight, fn)` runs at most `maxInFlight` calls at once (`0` is unbounded) and returns results in index order. Cancel returns the results collected so far plus `ctx.Err()`.
 
 ```go
 results, err := oddrip.DoConcurrent(ctx, len(tickers), 8, func(i int) (*types.GetMarketResponse, error) {
@@ -150,29 +94,22 @@ results, err := oddrip.DoConcurrent(ctx, len(tickers), 8, func(i int) (*types.Ge
 })
 ```
 
----
-
 ## Prices, counts, timestamps
 
-The API emits prices as dollar strings (`"0.4500"`, up to 6 decimals in responses), contract counts as fixed-point strings (`"10.00"`), and times as RFC 3339 strings. The response structs keep those as `string` so nothing is lost; `types` provides lossless parsers when you need numbers.
+The API emits dollar strings (`"0.4500"`, up to 6 decimals), contract counts as fixed-point strings (`"10.00"`), and RFC 3339 times. Response structs keep those as `string`; parse when you need numbers:
 
 ```go
-price, err := types.ParseDollars("0.4500") // Dollars, int64 scaled 1e-6
-price.String()                             // "0.4500" — safe to send back in a request
+price, err := types.ParseDollars("0.4500") // int64 scaled 1e-6
+price.String()                             // "0.4500"
 price.Cents()                              // 45 (truncates toward zero)
-price.Float64()                            // 0.45
 
-qty, _ := types.ParseCount("10")           // Count, int64 scaled 1e-2
-qty.String()                               // "10.00"
-
+qty, _ := types.ParseCount("10")           // int64 scaled 1e-2
 ts, _ := types.ParseTime("2022-11-22T20:44:01Z")
 ```
 
----
+## WebSocket
 
-## WebSocket (market data)
-
-The WebSocket API is **read-only**: subscribe to channels and receive streams. There is no order placement over WebSocket; use the REST client for that. Auth is required; the same signer used for REST is applied to the WebSocket handshake.
+Read-only market data. Auth is required. Place orders over REST.
 
 ```go
 conn, err := client.ConnectWS(ctx)
@@ -181,11 +118,10 @@ if err != nil {
 }
 defer conn.Close()
 
-subs, err := conn.Subscribe(ctx, types.SubscribeParams{
+if _, err := conn.Subscribe(ctx, types.SubscribeParams{
     Channels:     []string{types.WSChannelTicker, types.WSChannelOrderbookDelta},
     MarketTicker: "FED-23DEC-T3.00",
-})
-if err != nil {
+}); err != nil {
     return err
 }
 
@@ -196,55 +132,33 @@ for msg := range conn.Messages() {
         if err := msg.Decode(&t); err != nil {
             return err
         }
-        bid, _ := types.ParseDollars(t.YesBidDollars)
-        fmt.Println(t.MarketTicker, bid.Cents())
-    case types.WSTypeOrderbookSnapshot:
-        var snap types.OrderbookSnapshotMsg
-        _ = msg.Decode(&snap) // YesDollarsFp / NoDollarsFp are []OrderbookLevel{PriceDollars, CountFp}
-    case types.WSTypeOrderbookDelta:
-        var d types.OrderbookDeltaMsg
-        _ = msg.Decode(&d)
-    case types.WSTypeFill:
-        var f types.FillMsg
-        _ = msg.Decode(&f)
+        // ...
     }
 }
-
-// Messages() closes when the connection is gone. Err() says why.
 if err := conn.Err(); !errors.Is(err, oddrip.ErrWSClosed) {
     // dead socket, slow consumer, or server close: reconnect and re-subscribe
 }
 ```
 
-Every server message type has a `types.WSType*` constant and a typed `*Msg` struct (`TickerMsg`, `OrderbookSnapshotMsg`, `OrderbookDeltaMsg`, `TradeMsg`, `FillMsg`, `MarketPositionMsg`, `UserOrderMsg`, `OrderGroupUpdatesMsg`, `MarketLifecycleV2Msg`, the RFQ/quote messages, `PythValueMsg`, `CFBenchmarksValueMsg`, ...). `msg.Decode(&v)` unmarshals the payload.
+Commands: `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription`. Channel names and `WSType*` constants are in `types`. CF Benchmarks channels take `IndexIDs` (`[]string{"all"}` for every index). Server errors are `*oddrip.WSError`. Point at demo with `WSHost` / `WSPath` / `WSScheme`.
 
-**Connection lifecycle.** The connection sends keepalive pings and enforces a read deadline, so a half-open socket is detected within `WSReadTimeout` (default 90s) instead of blocking forever. Messages are never dropped silently: if the consumer of `Messages()` falls behind and the buffer (`WSBufferSize`, default 4096) fills, the connection is failed with `ErrWSSlowConsumer` and closed, because a gap in an `orderbook_delta` stream would otherwise corrupt your local book without warning. Treat `Messages()` closing as "reconnect and re-subscribe"; `Err()` returns the terminal error (`ErrWSClosed` after a clean `Close`, `ErrWSSlowConsumer`, or the underlying read error) and `Done()` is closed when the read loop exits. Options: `WSBufferSize(n)`, `WSPingInterval(d)` (default 30s, `<= 0` disables), `WSReadTimeout(d)` (default 90s, `<= 0` disables). `Close` is idempotent; all commands are safe to call concurrently.
+- If `Messages()` falls behind, the connection fails with `ErrWSSlowConsumer` (buffer default 4096) rather than dropping deltas. Reconnect and re-snapshot any local book.
+- Keepalive ping every 30s and a 90s read deadline. `WSReadTimeout(0)` / `WSPingInterval(0)` disable either.
+- `get_snapshot` needs `SID` or a one-element `Sids`. It returns when the first `orderbook_snapshot` for that subscription arrives (`Type` is `"orderbook_snapshot"`); the frames also go to `Messages()`.
+- `indexlist` / `underlying_list` replies are not `Type: "ok"`.
+- A multi-channel `Subscribe` that fails partway returns the accepted SIDs alongside the `*WSError`.
+- `Close` is idempotent. Commands are safe to call concurrently.
 
-**Commands:** `Subscribe`, `Unsubscribe`, `ListSubscriptions`, `UpdateSubscription` (add/remove markets, underlyings, or CF Benchmarks indices on a subscription; `get_snapshot` re-sends `orderbook_snapshot` frames on `Messages()` and returns once the first one for that subscription arrives). **Channels** (see `types`): ticker, orderbook_delta, trade, fill, market_positions, market_lifecycle_v2, multivariate_market_lifecycle, communications, order_group_updates, user_orders, pyth_value, cfbenchmarks_value, cfbenchmarks_value_5hz. The cfbenchmarks channels take `IndexIDs` instead of market tickers (`[]string{"all"}` for every index). Server errors come back as `*oddrip.WSError` (Code and Message). Use `oddrip.WSHost`, `oddrip.WSPath`, and `oddrip.WSScheme` to point at a different host or path (e.g. demo).
+## Examples
 
----
+`cmd/example` (REST) and `cmd/example/websocket_example` log request URLs and raw responses. Demo is the default and is incomplete; set `BASE_URL` to production.
 
-## Package layout
+## Releases
 
-- **`oddrip`** – REST client, `ConnectWS`, and service methods (`Exchange`, `Markets`, `Events`, `Orders`, `Portfolio`, `Account`, `LiveData`, `Series`, `OrderGroups`, `Subaccounts`).
-- **`oddrip/types`** – Request/response and enum types for both REST and WebSocket (e.g. `CreateOrderV2Request`, `SubscribeParams`, `WSMessage`, channel and message-type constants), typed WebSocket payloads, and the `Dollars`/`Count`/`ParseTime` helpers.
-- **`oddrip/internal/retry`** – Retry with backoff and retryable-status classification.
-- **`oddrip/internal/auth`** – RSA-PSS request signer.
-
-All public methods take `context.Context`. The client and WebSocket connection are safe for concurrent use.
-
----
-
-## Development and releases
-
-CI runs on every pull request and on `main`: `gofmt`, `go mod tidy` drift, `go vet`, `staticcheck`, `govulncheck`, and `go test -race -shuffle=on` on Go 1.24 and stable across Linux, macOS, and Windows. A `version` job checks that `oddrip/version.go`, the top `CHANGELOG.md` entry, and the README pin agree, and fails a code-changing PR whose version is already tagged.
-
-Releases are cut by merging to `main`. To ship a version:
+CI runs `gofmt`, `go mod tidy`, `go vet`, `staticcheck`, `govulncheck`, and `go test -race -shuffle=on` on Go 1.24 and stable (Linux, macOS, Windows). Merging to `main` tags `vX.Y.Z` and publishes a GitHub Release when that version is not already tagged.
 
 1. Bump `const Version` in `oddrip/version.go`.
-2. Add a `## [X.Y.Z] — YYYY-MM-DD` section at the top of `CHANGELOG.md`; its body becomes the release notes.
+2. Add a `## [X.Y.Z] — YYYY-MM-DD` section at the top of `CHANGELOG.md`.
 3. Update the `@vX.Y.Z` pin in this README.
 
-When the merge lands and all checks pass, the `release` job tags `vX.Y.Z`, publishes a GitHub Release with the CHANGELOG section, and warms `proxy.golang.org`. A merge whose version is already tagged (docs-only changes) is a no-op.
-
-**Versioning.** Semver. While the module is at v0, a minor release may contain breaking changes; they are always listed first under `### Breaking` in the CHANGELOG with migration notes. CI runs `gorelease` against the previous tag and refuses a release that has API-incompatible changes without that section, or that declares one on a patch bump. Patch releases never break. Behavioral changes that `gorelease` cannot see (e.g. a connection now closing where it used to hang) are declared under the same heading.
+Semver. While at v0, a minor release may break; those changes go first under `### Breaking`. CI runs `gorelease` against the previous tag and refuses a release that has API-incompatible changes without that heading, or that declares one on a patch bump.
