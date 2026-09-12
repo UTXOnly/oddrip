@@ -139,6 +139,30 @@ func TestPythValueMsg_Unmarshal(t *testing.T) {
 	}
 }
 
+// Payload is the marketCreated example from asyncapi.yaml; exchange_index is
+// only present on created events and shard 0 must survive the decode.
+func TestMarketLifecycleV2Msg_Unmarshal_Created(t *testing.T) {
+	const payload = `{
+		"market_ticker": "INXD-23SEP14-B4487",
+		"event_type": "created",
+		"exchange_index": 0,
+		"open_ts": 1694635200,
+		"close_ts": 1694721600,
+		"price_level_structure": "linear_cent",
+		"additional_metadata": {"event_ticker": "INXD-23SEP14", "strike_type": "greater", "floor_strike": 4487}
+	}`
+	var msg MarketLifecycleV2Msg
+	if err := json.Unmarshal([]byte(payload), &msg); err != nil {
+		t.Fatal(err)
+	}
+	if msg.EventType != "created" || msg.ExchangeIndex == nil || *msg.ExchangeIndex != 0 {
+		t.Fatalf("unexpected: %+v", msg)
+	}
+	if msg.OpenTs == nil || *msg.OpenTs != 1694635200 || msg.AdditionalMetadata == nil || msg.AdditionalMetadata.EventTicker != "INXD-23SEP14" {
+		t.Fatalf("unexpected: %+v", msg)
+	}
+}
+
 func TestMarketLifecycleV2Msg_Unmarshal_PriceRanges(t *testing.T) {
 	const payload = `{
 		"market_ticker": "INXD-23SEP14-B4487",
@@ -152,6 +176,9 @@ func TestMarketLifecycleV2Msg_Unmarshal_PriceRanges(t *testing.T) {
 	}
 	if msg.EventType != "price_level_structure_updated" || len(msg.PriceRanges) != 1 || msg.PriceRanges[0].Step != "0.0010" {
 		t.Fatalf("unexpected: %+v", msg)
+	}
+	if msg.ExchangeIndex != nil {
+		t.Fatalf("exchange_index should be nil when absent, got %d", *msg.ExchangeIndex)
 	}
 }
 
@@ -189,13 +216,49 @@ func TestCFBenchmarksValue5HzMsg_Unmarshal(t *testing.T) {
 	}
 }
 
+// Payload is the cfbenchmarksValueUpdate example from asyncapi.yaml.
 func TestCFBenchmarksValueMsg_Unmarshal(t *testing.T) {
-	const payload = `{"index_id":"BRTI","received_at":1716300000250,"data":"{}","avg_60s_data":{"index_id":"BRTI","value_usd":"64999.00000000","source_ts_ms":1716300000000}}`
+	const payload = `{
+		"index_id": "BRTI",
+		"received_at": 1710000000123,
+		"data": "{\"type\":\"value\",\"id\":\"BRTI\",\"time\":1710000000123,\"value\":\"68000.12\"}",
+		"avg_60s_data": {
+			"value": "68000.12000000",
+			"window_size": 3,
+			"window_start_ts_ms": 1709999940123,
+			"window_end_ts_exclusive": 1710000000123
+		},
+		"last_60s_windowed_average_15min": {
+			"value": "68000.23000000",
+			"window_size": 14,
+			"window_start_ts_ms": 1709999980000,
+			"window_end_ts_exclusive": 1710000000123
+		}
+	}`
 	var out CFBenchmarksValueMsg
 	if err := json.Unmarshal([]byte(payload), &out); err != nil {
 		t.Fatal(err)
 	}
-	if out.Avg60sData == nil || out.Avg60sData.ValueUSD != "64999.00000000" {
+	if out.IndexID != "BRTI" || out.ReceivedAt != 1710000000123 {
+		t.Fatalf("unexpected: %+v", out)
+	}
+	avg := out.Avg60sData
+	if avg == nil || avg.Value != "68000.12000000" || avg.WindowSize != 3 || avg.WindowStartTsMs != 1709999940123 || avg.WindowEndTsExclusive != 1710000000123 {
+		t.Fatalf("avg_60s_data: %+v", avg)
+	}
+	q := out.Last60sWindowedAverage15Min
+	if q == nil || q.Value != "68000.23000000" || q.WindowSize != 14 || q.WindowStartTsMs != 1709999980000 {
+		t.Fatalf("last_60s_windowed_average_15min: %+v", q)
+	}
+}
+
+func TestCFBenchmarksValueMsg_Unmarshal_NoQuarterHourAverage(t *testing.T) {
+	const payload = `{"index_id":"BRTI","received_at":1,"data":"{}","avg_60s_data":{"value":"1.00000000","window_size":0,"window_start_ts_ms":0,"window_end_ts_exclusive":1}}`
+	var out CFBenchmarksValueMsg
+	if err := json.Unmarshal([]byte(payload), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.Avg60sData == nil || out.Avg60sData.Value != "1.00000000" {
 		t.Fatalf("avg: %+v", out.Avg60sData)
 	}
 	if out.Last60sWindowedAverage15Min != nil {

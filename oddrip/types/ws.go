@@ -171,6 +171,7 @@ type MarketLifecycleAdditionalMetadata struct {
 type MarketLifecycleV2Msg struct {
 	EventType           string                             `json:"event_type"`
 	MarketTicker        string                             `json:"market_ticker"`
+	ExchangeIndex       *int                               `json:"exchange_index,omitempty"`
 	OpenTs              *int64                             `json:"open_ts,omitempty"`
 	CloseTs             *int64                             `json:"close_ts,omitempty"`
 	Result              string                             `json:"result,omitempty"`
@@ -188,13 +189,14 @@ type MarketLifecycleV2Msg struct {
 	AdditionalMetadata  *MarketLifecycleAdditionalMetadata `json:"additional_metadata,omitempty"`
 }
 
-// CFBenchmarksAvgData is an averaged index value carried on the once-per-second
-// cfbenchmarks_value channel.
+// CFBenchmarksAvgData is the windowed-average metadata carried on the
+// once-per-second cfbenchmarks_value channel. Value is formatted to 8 decimal
+// places; the window is [WindowStartTsMs, WindowEndTsExclusive) in unix ms.
 type CFBenchmarksAvgData struct {
-	IndexID    string `json:"index_id,omitempty"`
-	ValueUSD   string `json:"value_usd,omitempty"`
-	SourceTsMs *int64 `json:"source_ts_ms,omitempty"`
-	WindowSec  *int   `json:"window_sec,omitempty"`
+	Value                string `json:"value"`
+	WindowSize           int    `json:"window_size"`
+	WindowStartTsMs      int64  `json:"window_start_ts_ms"`
+	WindowEndTsExclusive int64  `json:"window_end_ts_exclusive"`
 }
 
 // CFBenchmarksValueMsg is a cfbenchmarks_value message: the raw upstream frame
