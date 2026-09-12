@@ -2,6 +2,7 @@ package oddrip
 
 import (
 	"context"
+	"errors"
 	"net/url"
 
 	"github.com/UTXOnly/oddrip/oddrip/types"
@@ -62,6 +63,44 @@ func (s *EventsService) Get(ctx context.Context, eventTicker string, opts *types
 func (s *EventsService) GetMetadata(ctx context.Context, eventTicker string) (*types.GetEventMetadataResponse, error) {
 	var out types.GetEventMetadataResponse
 	if err := s.client.get(ctx, joinPath("events", eventTicker, "metadata"), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *EventsService) ListMultivariateCollections(ctx context.Context, opts *types.GetMultivariateEventCollectionsOpts) (*types.GetMultivariateEventCollectionsResponse, error) {
+	v := url.Values{}
+	if opts != nil {
+		encodeQuery(v, "status", opts.Status)
+		encodeQuery(v, "associated_event_ticker", opts.AssociatedEventTicker)
+		encodeQuery(v, "series_ticker", opts.SeriesTicker)
+		encodeQueryInt64(v, "limit", opts.Limit)
+		encodeQuery(v, "cursor", opts.Cursor)
+	}
+	var out types.GetMultivariateEventCollectionsResponse
+	if err := s.client.get(ctx, joinPath("multivariate_event_collections"), v, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (s *EventsService) GetMultivariateCollection(ctx context.Context, collectionTicker string) (*types.GetMultivariateEventCollectionResponse, error) {
+	var out types.GetMultivariateEventCollectionResponse
+	if err := s.client.get(ctx, joinPath("multivariate_event_collections", collectionTicker), nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// CreateMarketInMultivariateCollection creates (or ensures) the combination
+// market selected by req.SelectedMarkets. Must be called before trading or
+// looking up such a market; limited to 5000 creations per week.
+func (s *EventsService) CreateMarketInMultivariateCollection(ctx context.Context, collectionTicker string, req *types.CreateMarketInMultivariateEventCollectionRequest) (*types.CreateMarketInMultivariateEventCollectionResponse, error) {
+	if req == nil || len(req.SelectedMarkets) == 0 {
+		return nil, errors.New("selected_markets required")
+	}
+	var out types.CreateMarketInMultivariateEventCollectionResponse
+	if err := s.client.post(ctx, joinPath("multivariate_event_collections", collectionTicker), req, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

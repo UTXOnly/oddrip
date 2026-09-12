@@ -19,15 +19,15 @@ const (
 )
 
 const (
-	WSUpdateSubscriptionAddMarkets           = "add_markets"
-	WSUpdateSubscriptionDeleteMarkets        = "delete_markets"
-	WSUpdateSubscriptionGetSnapshot          = "get_snapshot"
-	WSUpdateSubscriptionSubscribeUnderlyings = "subscribe_underlyings"
+	WSUpdateSubscriptionAddMarkets             = "add_markets"
+	WSUpdateSubscriptionDeleteMarkets          = "delete_markets"
+	WSUpdateSubscriptionGetSnapshot            = "get_snapshot"
+	WSUpdateSubscriptionSubscribeUnderlyings   = "subscribe_underlyings"
 	WSUpdateSubscriptionUnsubscribeUnderlyings = "unsubscribe_underlyings"
-	WSUpdateSubscriptionUnderlyingList       = "underlying_list"
-	WSUpdateSubscriptionSubscribeIndices     = "subscribe_indices"
-	WSUpdateSubscriptionUnsubscribeIndices   = "unsubscribe_indices"
-	WSUpdateSubscriptionIndexList            = "indexlist"
+	WSUpdateSubscriptionUnderlyingList         = "underlying_list"
+	WSUpdateSubscriptionSubscribeIndices       = "subscribe_indices"
+	WSUpdateSubscriptionUnsubscribeIndices     = "unsubscribe_indices"
+	WSUpdateSubscriptionIndexList              = "indexlist"
 )
 
 type SubscribeParams struct {
@@ -60,16 +60,16 @@ type UnsubscribeCommand struct {
 }
 
 type UpdateSubscriptionParams struct {
-	SID               *int     `json:"sid,omitempty"`
-	Sids              []int    `json:"sids,omitempty"`
-	MarketTicker      string   `json:"market_ticker,omitempty"`
-	MarketTickers     []string `json:"market_tickers,omitempty"`
-	MarketID          string   `json:"market_id,omitempty"`
-	MarketIDs         []string `json:"market_ids,omitempty"`
-	UnderlyingTickers []string `json:"underlying_tickers,omitempty"`
-	IndexIDs          []string `json:"index_ids,omitempty"`
-	SendInitialSnapshot *bool  `json:"send_initial_snapshot,omitempty"`
-	Action            string   `json:"action"`
+	SID                 *int     `json:"sid,omitempty"`
+	Sids                []int    `json:"sids,omitempty"`
+	MarketTicker        string   `json:"market_ticker,omitempty"`
+	MarketTickers       []string `json:"market_tickers,omitempty"`
+	MarketID            string   `json:"market_id,omitempty"`
+	MarketIDs           []string `json:"market_ids,omitempty"`
+	UnderlyingTickers   []string `json:"underlying_tickers,omitempty"`
+	IndexIDs            []string `json:"index_ids,omitempty"`
+	SendInitialSnapshot *bool    `json:"send_initial_snapshot,omitempty"`
+	Action              string   `json:"action"`
 }
 
 type UpdateSubscriptionCommand struct {
@@ -169,41 +169,43 @@ type MarketLifecycleAdditionalMetadata struct {
 }
 
 type MarketLifecycleV2Msg struct {
-	EventType           string                            `json:"event_type"`
-	MarketTicker        string                            `json:"market_ticker"`
-	OpenTs              *int64                            `json:"open_ts,omitempty"`
-	CloseTs             *int64                            `json:"close_ts,omitempty"`
-	Result              string                            `json:"result,omitempty"`
-	DeterminationTs     *int64                            `json:"determination_ts,omitempty"`
-	SettlementValue     string                            `json:"settlement_value,omitempty"`
-	SettledTs           *int64                            `json:"settled_ts,omitempty"`
-	IsDeactivated       *bool                             `json:"is_deactivated,omitempty"`
-	PriceLevelStructure string                            `json:"price_level_structure,omitempty"`
-	PriceRanges         []PriceRange                      `json:"price_ranges,omitempty"`
-	StrikeType          string                            `json:"strike_type,omitempty"`
-	FloorStrike         *float64                          `json:"floor_strike,omitempty"`
-	CapStrike           *float64                          `json:"cap_strike,omitempty"`
-	CustomStrike        json.RawMessage                   `json:"custom_strike,omitempty"`
-	YesSubTitle         string                            `json:"yes_sub_title,omitempty"`
+	EventType           string                             `json:"event_type"`
+	MarketTicker        string                             `json:"market_ticker"`
+	ExchangeIndex       *int                               `json:"exchange_index,omitempty"`
+	OpenTs              *int64                             `json:"open_ts,omitempty"`
+	CloseTs             *int64                             `json:"close_ts,omitempty"`
+	Result              string                             `json:"result,omitempty"`
+	DeterminationTs     *int64                             `json:"determination_ts,omitempty"`
+	SettlementValue     string                             `json:"settlement_value,omitempty"`
+	SettledTs           *int64                             `json:"settled_ts,omitempty"`
+	IsDeactivated       *bool                              `json:"is_deactivated,omitempty"`
+	PriceLevelStructure string                             `json:"price_level_structure,omitempty"`
+	PriceRanges         []PriceRange                       `json:"price_ranges,omitempty"`
+	StrikeType          string                             `json:"strike_type,omitempty"`
+	FloorStrike         *float64                           `json:"floor_strike,omitempty"`
+	CapStrike           *float64                           `json:"cap_strike,omitempty"`
+	CustomStrike        json.RawMessage                    `json:"custom_strike,omitempty"`
+	YesSubTitle         string                             `json:"yes_sub_title,omitempty"`
 	AdditionalMetadata  *MarketLifecycleAdditionalMetadata `json:"additional_metadata,omitempty"`
 }
 
-// CFBenchmarksAvgData is an averaged index value carried on the once-per-second
-// cfbenchmarks_value channel.
+// CFBenchmarksAvgData is the windowed-average metadata carried on the
+// once-per-second cfbenchmarks_value channel. Value is formatted to 8 decimal
+// places; the window is [WindowStartTsMs, WindowEndTsExclusive) in unix ms.
 type CFBenchmarksAvgData struct {
-	IndexID    string `json:"index_id,omitempty"`
-	ValueUSD   string `json:"value_usd,omitempty"`
-	SourceTsMs *int64 `json:"source_ts_ms,omitempty"`
-	WindowSec  *int   `json:"window_sec,omitempty"`
+	Value                string `json:"value"`
+	WindowSize           int    `json:"window_size"`
+	WindowStartTsMs      int64  `json:"window_start_ts_ms"`
+	WindowEndTsExclusive int64  `json:"window_end_ts_exclusive"`
 }
 
 // CFBenchmarksValueMsg is a cfbenchmarks_value message: the raw upstream frame
 // plus the 60-second and quarter-hour averages.
 type CFBenchmarksValueMsg struct {
-	IndexID                    string               `json:"index_id"`
-	ReceivedAt                 int64                `json:"received_at"`
-	Data                       string               `json:"data"`
-	Avg60sData                 *CFBenchmarksAvgData `json:"avg_60s_data,omitempty"`
+	IndexID                     string               `json:"index_id"`
+	ReceivedAt                  int64                `json:"received_at"`
+	Data                        string               `json:"data"`
+	Avg60sData                  *CFBenchmarksAvgData `json:"avg_60s_data,omitempty"`
 	Last60sWindowedAverage15Min *CFBenchmarksAvgData `json:"last_60s_windowed_average_15min,omitempty"`
 }
 

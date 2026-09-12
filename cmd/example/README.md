@@ -9,18 +9,18 @@ Each log entry includes:
 - The HTTP method and **fully constructed URL** (base URL + path + query)
 - Response status code and **raw response body** (pretty-printed JSON)
 
-Endpoints covered: exchange (status, announcements, schedule, user_data_timestamp, historical cutoff, series fee changes), markets (list, get, orderbook, trades), events (list, list multivariate, get, get metadata), orders (list, get, queue position(s)), portfolio (balance, fills, positions), account (API limits).
+Endpoints covered: exchange (status, schedule, user_data_timestamp, historical cutoff, series fee changes), markets (list, get, orderbook, trades), events (list, list multivariate, get, get metadata), orders (list, get, queue position(s)), portfolio (balance, fills, positions), account (API limits).
 
 ## Keys from files in this directory
 
-Place your Kalshi API credentials as files in this directory:
+Create two files in this directory (they are not shipped with the repo and are gitignored via `cmd/example/key_id` and `*.pem`):
 
 | File              | Description                          |
 |-------------------|--------------------------------------|
 | `key_id`          | Your API key ID (single line).        |
 | `private_key.pem` | RSA private key in PEM format (PKCS#8 or PKCS#1). |
 
-Then run from the repo root:
+The program does not read these files itself; it takes the key ID from `KALSHI_ACCESS_KEY` and the PEM path from `KALSHI_PRIVATE_KEY_PATH`, so the commands below feed them in:
 
 ```bash
 cd cmd/example
@@ -50,4 +50,4 @@ Without auth, only public endpoints run. With auth, portfolio and orders endpoin
 
 **Live mode (place order):** Set `LIVE=1` and use **production** `BASE_URL` (demo does not support order placement). The example will: (1) find the current open 15‑minute BTC market (series `KXBTC15M`), (2) place a limit order for 1 contract yes at 1¢ and leave it resting so you can confirm, (3) place a second 1¢ yes bid, (4) cancel only the second order (to test cancel). The first order remains resting. Requires auth.
 
-**Security:** Do not commit `key_id` or `private_key.pem`. Add them to `.gitignore` if they live under the repo.
+**Security:** `key_id` and `*.pem` are gitignored so the local credential files stay out of commits. Do not force-add them, and do not copy them elsewhere under the repo.

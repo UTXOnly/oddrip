@@ -1,0 +1,218 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      - name: gofmt
+        run: |
+          out=$(gofmt -l .)
+          if [ -n "$out" ]; then echo "unformatted:"; echo "$out"; exit 1; fi
+      - name: go mod tidy is a no-op
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum
+      - run: go vet ./...
+      - name: staticcheck
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  test:
+    name: test (go ${{ matrix.go }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest,  go: "1.24" }
+          - { os: ubuntu-latest,  go: stable }
+          - { os: macos-latest,   go: stable }
+          - { os: windows-latest, go: stable }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+      - run: go build ./...
+      - run: go test -race -count=1 -shuffle=on -coverprofile=coverage.out ./...
+      - name: coverage summary
+        if: matrix.os == 'ubuntu-latest' && matrix.go == 'stable'
+        run: go tool cover -func=coverage.out | tail -1
+
+  version:
+    name: version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: version.go, CHANGELOG, README agree and the version is unreleased
+        env:
+          BASE_REF: ${{ github.base_ref || 'main' }}
+        run: |
+          set -euo pipefail
+          version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' oddrip/version.go)
+          echo "oddrip.Version = $version"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::Version '$version' is not X.Y.Z"; exit 1; }
+
+          top=$(grep -m1 -oE '^## \[[0-9]+\.[0-9]+\.[0-9]+\]' CHANGELOG.md | tr -d '[]# ')
+          [ "$top" = "$version" ] || { echo "::error::CHANGELOG top entry is $top but oddrip.Version is $version"; exit 1; }
+
+          grep -q "@v$version" README.md || { echo "::error::README does not pin @v$version"; exit 1; }
+
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            if [ "${{ github.event_name }}" = "pull_request" ]; then
+              git fetch -q origin "$BASE_REF"
+              if git diff --name-only "origin/$BASE_REF...HEAD" -- oddrip go.mod go.sum | grep -q .; then
+                echo "::error::v$version is already released; this PR changes code, so bump oddrip/version.go and add a CHANGELOG entry"
+                exit 1
+              fi
+              echo "v$version already released; docs-only change, no bump required"
+            else
+              echo "v$version already released"
+            fi
+            echo "released=true" >> "$GITHUB_ENV"
+          else
+            echo "v$version is unreleased; merging to main will tag and publish it"
+            echo "released=false" >> "$GITHUB_ENV"
+          fi
+          echo "version=$version" >> "$GITHUB_ENV"
+      - uses: actions/setup-go@v7
+        if: env.released == 'false'
+        with:
+          go-version: stable
+      - name: breaking changes are declared and the bump matches
+        if: env.released == 'false'
+        run: |
+          set -euo pipefail
+          prev=$(git tag -l 'v*' | sort -V | tail -1)
+          [ -n "$prev" ] || { echo "no previous tag; skipping"; exit 0; }
+          echo "previous release: $prev"
+
+          [ "$(printf '%s\n' "${prev#v}" "$version" | sort -V | tail -1)" = "$version" ] && [ "${prev#v}" != "$version" ] \
+            || { echo "::error::oddrip.Version $version is not greater than latest tag $prev"; exit 1; }
+
+          awk -v v="$version" '$0 ~ "^## \\[" v "\\]" { on=1; next } on && /^## \[/ { exit } on { print }' CHANGELOG.md > "$RUNNER_TEMP/section.md"
+          declared=false; grep -q '^### Breaking' "$RUNNER_TEMP/section.md" && declared=true
+
+          go run golang.org/x/exp/cmd/gorelease@latest -base="$prev" -version="v$version" > "$RUNNER_TEMP/gorelease.txt" 2>&1 || true
+          { echo "## gorelease $prev → v$version"; echo; echo '```'; cat "$RUNNER_TEMP/gorelease.txt"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          cat "$RUNNER_TEMP/gorelease.txt"
+          grep -q '^# summary' "$RUNNER_TEMP/gorelease.txt" || { echo "::error::gorelease did not complete; refusing to pass without an API diff"; exit 1; }
+
+          api_breaks=$(awk '/^## incompatible changes/{on=1; next} /^## /{on=0} on && NF && !/^Version: value changed/' "$RUNNER_TEMP/gorelease.txt" || true)
+          if [ -n "$api_breaks" ] && [ "$declared" = false ]; then
+            echo "::error::gorelease found API-incompatible changes but the $version CHANGELOG section has no '### Breaking' heading:"
+            echo "$api_breaks"
+            exit 1
+          fi
+
+          IFS=. read -r pmaj pmin _ <<< "${prev#v}"
+          IFS=. read -r cmaj cmin _ <<< "$version"
+          if [ "$declared" = true ]; then
+            if [ "$cmaj" -eq 0 ] && [ "$pmaj" -eq 0 ]; then
+              [ "$cmin" -gt "$pmin" ] || { echo "::error::$version declares breaking changes but does not bump the minor version from $prev (v0 policy)"; exit 1; }
+            else
+              [ "$cmaj" -gt "$pmaj" ] || { echo "::error::$version declares breaking changes but does not bump the major version from $prev"; exit 1; }
+            fi
+            echo "breaking changes declared; bump from $prev to v$version is acceptable"
+          else
+            echo "no breaking changes declared or detected"
+          fi
+
+  release:
+    name: release
+    needs: [lint, test, version]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+      # Tag and GitHub release are checked separately so a run that pushed the
+      # tag but failed to create the release is completed by the next push
+      # instead of being skipped as "already tagged".
+      - name: resolve version
+        id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(sed -n 's/^const Version = "\(.*\)"$/\1/p' oddrip/version.go)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$version" >/dev/null; then
+            echo "tagged=true" >> "$GITHUB_OUTPUT"
+            echo "v$version already tagged"
+          else
+            echo "tagged=false" >> "$GITHUB_OUTPUT"
+          fi
+          if gh release view "v$version" >/dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "v$version already has a GitHub release; nothing to do"
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: extract release notes
+        if: steps.v.outputs.released == 'false'
+        run: |
+          awk -v v="${{ steps.v.outputs.version }}" '
+            $0 ~ "^## \\[" v "\\]" { on=1; next }
+            on && /^## \[/ { exit }
+            on { print }
+          ' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "::error::no CHANGELOG section for ${{ steps.v.outputs.version }}"; exit 1; }
+          echo "--- notes.md ---"; cat notes.md
+      - name: tag
+        if: steps.v.outputs.tagged == 'false'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v${{ steps.v.outputs.version }}" -m "v${{ steps.v.outputs.version }}"
+          git push origin "v${{ steps.v.outputs.version }}"
+      - name: GitHub release
+        if: steps.v.outputs.released == 'false'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ steps.v.outputs.version }}" \
+            --title "v${{ steps.v.outputs.version }}" \
+            --notes-file notes.md \
+            --verify-tag
+      - name: warm module proxy
+        if: steps.v.outputs.released == 'false'
+        env:
+          GOPROXY: https://proxy.golang.org
+          GOFLAGS: -mod=mod
+        run: |
+          cd "$(mktemp -d)" && go mod init tmp >/dev/null
+          for i in 1 2 3 4 5; do
+            go list -m "github.com/UTXOnly/oddrip@v${{ steps.v.outputs.version }}" && exit 0
+            sleep 15
+          done
+          echo "::warning::proxy.golang.org has not indexed v${{ steps.v.outputs.version }} yet; it will on first fetch"

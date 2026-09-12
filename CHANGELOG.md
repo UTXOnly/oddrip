@@ -2,6 +2,70 @@
 
 All notable changes to this project are documented here. The client tracks [Kalshi’s API changelog](https://docs.kalshi.com/changelog); repository root `openapi.yaml` / `asyncapi.yaml` are the source of truth for shapes and endpoints.
 
+**Versioning.** The module follows semver. While it is at major version 0, a **minor** release may contain breaking changes; when it does, they are listed first under a `### Breaking` heading with migration notes, and CI refuses a release that has API-incompatible changes (per `gorelease`) without that section, or that has one on a patch bump. Patch releases never break. From v1.0.0 on, breaking changes require a major bump.
+
+## [0.6.0] — 2026-09-12
+
+Audit release. Every item under **Fixed** was reproduced with a failing test before the fix; the shipped test suite now exercises retry exhaustion, context cancellation during backoff, multi-channel subscribes, concurrent WebSocket writes, slow consumers, and dead connections.
+
+### Breaking
+
+Two source-incompatible API changes (the only ones `gorelease -base=v0.5.0` reports) and three behavioral changes that a consumer must account for.
+
+- **`DoConcurrent` signature.** `DoConcurrent(ctx, n, fn)` is now `DoConcurrent(ctx, n, maxInFlight, fn)`. The old function was documented as bounded but ran all `n` calls at once; the new argument makes it true. Migrate by inserting a limit — `0` reproduces the old unbounded behavior exactly:
+  ```go
+  // before
+  oddrip.DoConcurrent(ctx, len(tickers), fn)
+  // after
+  oddrip.DoConcurrent(ctx, len(tickers), 8, fn) // or 0 for unbounded
+  ```
+- **`types.CFBenchmarksAvgData` fields renamed to match the AsyncAPI schema.** The struct shipped in 0.5.0 with tags (`index_id`, `value_usd`, `source_ts_ms`, `window_sec`) that the server never sends, so `Avg60sData` and `Last60sWindowedAverage15Min` always decoded empty. The fields are now `Value`, `WindowSize`, `WindowStartTsMs`, `WindowEndTsExclusive` (`value`, `window_size`, `window_start_ts_ms`, `window_end_ts_exclusive`). Code that read the old fields was reading zero values; switch to the new names.
+- **Non-idempotent writes are no longer retried on 5xx or transport errors.** Previously every request was retried on 429, 5xx, and connection errors alike, so a `DecreaseV2` whose connection dropped after the server applied it was replayed and reduced the order twice. Now GET/PUT/DELETE and POSTs the server deduplicates (`CreateV2`/`BatchCreateV2` with `client_order_id` on every order, `Subaccounts.Transfer`, `SetTargetBalanceAllocation`) keep the full policy; `AmendV2`, `DecreaseV2`, creates without a `client_order_id`, `OrderGroups.Create`, `Subaccounts.Create`, and `CreateMarketInMultivariateCollection` are retried on 429 only and surface the 5xx `*APIError` or transport error on the first occurrence. Code that relied on those being retried through transient 5xx must now handle the error (reconcile with `Orders.Get`, then resend). Setting `client_order_id` on creates restores full retries for them.
+- **WebSocket slow consumer now closes the connection.** Previously, if the reader of `Messages()` fell more than 256 messages behind, messages were dropped with no signal. Now the buffer is 4096 (`WSBufferSize`) and on overflow the connection fails with `ErrWSSlowConsumer`, `Messages()` closes, and `Err()` reports why. A consumer that tolerated silent gaps must now reconnect (and re-snapshot any local book) when `Messages()` closes. Consumers that already treat a closed `Messages()` as a disconnect need no change.
+- **WebSocket read deadline.** Connections now enforce `WSReadTimeout` (default 90s, extended by every frame including keepalive pongs). A half-open socket that previously left `Messages()` open forever now closes it with a timeout error in `Err()`. Live connections are unaffected — the client pings every `WSPingInterval` (30s), so an idle-but-healthy subscription stays up. Pass `WSReadTimeout(0)` / `WSPingInterval(0)` to restore the old behavior.
+
+### Fixed
+
+- **Retry exhaustion panicked the caller.** When every attempt returned 429/5xx with no transport error, `retry.Do` returned a nil response and `client.do` dereferenced it. No `RetryConfig` avoided it (`MaxAttempts: 1` panicked on the first 429). The last response is now surfaced as `*APIError` with its real status, code, and message.
+- **Retry backoff ignored the context.** Both waits used `time.Sleep`; a cancelled request could block for the full `Retry-After` or `MaxDelay` (30s by default). Waits now return `ctx.Err()` promptly.
+- **Multi-channel `Subscribe` hung until the context deadline.** The read loop discarded the pending reply slot after the first `subscribed` message, so `Subscribe` with two or more channels (the README's own example) never completed. One `SubscribedResponse` per channel is now returned. Reply buffering is sized to the channel count, so subscribing to more than 8 channels at once also works.
+- **Concurrent WebSocket commands raced.** `Subscribe`/`Unsubscribe`/`UpdateSubscription`/`Close` wrote to the socket without serialization, tripping gorilla's concurrent-writer check under `-race`. All writes are now serialized; `WSConn` is safe for concurrent use as documented.
+- **`UpdateSubscription` with `get_snapshot` never returned.** The spec answers `get_snapshot` with `orderbook_snapshot` frames, which carry no command `id`, but the client waited for an id-matched reply and blocked until the context expired. The call now completes on the first `orderbook_snapshot` for the subscription (or an id-matched `ok`/`error` if the server sends one), returning `Type: "orderbook_snapshot"` with the frame's `SID`/`Seq`; the snapshots themselves arrive on `Messages()` as before. `get_snapshot` now requires `SID` or a single-element `Sids`, matching the command schema.
+- **CF Benchmarks averages decoded empty.** See **Breaking** above: `CFBenchmarksAvgData` used field names that are not in the schema, so the typed 60-second and quarter-hour averages were always zero. The unmarshal test now uses the AsyncAPI example payload.
+- **An empty path parameter routed the call to a different endpoint.** Paths were built with `path.Join`, which drops empty segments, so `Orders.CancelV2(ctx, "", nil)` sent `DELETE /portfolio/events/orders` — the **CancelAll** endpoint — and `Markets.Get(ctx, "")` quietly called the list endpoint. Every path segment is now required to be non-empty (and not `.`/`..`) and is path-escaped; an offending call returns `ErrEmptyPathParam` before any request is sent.
+- **`Subscribe` discarded accepted channels on a partial failure.** The server confirms each channel separately; when it rejected one channel after accepting others, the call returned only the error while the accepted subscriptions stayed live on the server. The accepted `SubscribedResponse`s are now returned alongside the `*WSError`.
+- **`MarketLifecycleV2Msg` dropped `exchange_index`.** `created` events carry the shard the market lives on; the field was missing from the struct and silently discarded. Added as `ExchangeIndex *int` (nil on every other event type, so shard 0 is distinguishable from absent).
+
+### Changed
+
+- **WebSocket messages are never dropped silently.** Previously a consumer that fell 256 messages behind lost messages with no signal. Now the buffer is `WSBufferSize(n)` (default 4096) and on overflow the connection fails with `ErrWSSlowConsumer` and closes — a gap in `orderbook_delta` is unrecoverable without a re-snapshot, so failing loudly is correct. Treat `Messages()` closing as "reconnect and re-subscribe".
+- **WebSocket keepalive and dead-connection detection.** Client pings every `WSPingInterval` (default 30s) and enforces a read deadline of `WSReadTimeout` (default 90s), extended on every frame. A half-open socket now surfaces as a timeout error instead of blocking `Messages()` forever. `<= 0` disables either.
+- **`Close()`** is idempotent and no longer writes a close frame on an already-dead connection. `Subscribe` and friends return `ErrWSClosed` (or the terminal error) immediately after close/disconnect instead of waiting on the context.
+- **`Retry-After`** is honored in HTTP-date form as well as delta-seconds. `RetryConfig.MaxAttempts` below 1 is treated as 1.
+- **`DoConcurrent`** now takes a `maxInFlight` argument — `DoConcurrent(ctx, n, maxInFlight, fn)` — and actually bounds concurrency with a semaphore (the README had claimed it did). `maxInFlight <= 0` is unbounded; workers blocked on the semaphore honor `ctx`.
+- **Malformed command replies are errors.** `Subscribe`, `ListSubscriptions`, and `UpdateSubscription` previously ignored a JSON decode failure on the reply's `msg` and returned zero values (`sid: 0`) with a nil error; they now return the decode error.
+- Retried responses are drained before being closed so the connection is reused for the next attempt.
+- `http.Client` timeouts in `New()` use typed `time.Duration` constants.
+
+### Added
+
+- `ErrEmptyPathParam`, returned by any call whose ticker / ID path parameter is empty.
+- **WebSocket:** `WSConn.Err()` (terminal error: `ErrWSClosed`, `ErrWSSlowConsumer`, or the read error) and `WSConn.Done()`; options `WSBufferSize`, `WSPingInterval`, `WSReadTimeout`; error `ErrWSSlowConsumer`.
+- **Types — typed WebSocket payloads** for every server message: `TickerMsg`, `OrderbookSnapshotMsg`, `OrderbookDeltaMsg` (levels as `OrderbookLevel{PriceDollars, CountFp}` decoded from the spec's `[price, count]` pairs), `TradeMsg`, `FillMsg`, `MarketPositionMsg`, `UserOrderMsg`, `OrderGroupUpdatesMsg`, `MultivariateMarketLifecycleMsg`, `EventLifecycleMsg`, `EventFeeUpdateMsg`, RFQ/quote messages; `WSType*` constants for each `type` string; `WSMessage.Decode(&v)`.
+- **Types — helpers:** `Dollars` (int64, 1e-6 scale — lossless for the 6 decimals responses emit) with `ParseDollars`/`String`/`Float64`/`Cents`; `Count` (int64, 1e-2 scale) with `ParseCount`/`String`/`Float64`; `ParseTime` for the RFC 3339 layouts Kalshi emits.
+- **REST — `SeriesService`:** `List`, `Get`, `GetMarketCandlesticks`, `GetEventCandlesticks`, `GetForecastPercentileHistory`.
+- **REST — `OrderGroupsService`:** `List`, `Create`, `Get`, `Delete`, `Reset`, `Trigger`, `UpdateLimit`.
+- **REST — `SubaccountsService`:** `Create`, `GetBalances`, `Transfer`, `ListTransfers`, `GetNetting`, `UpdateNetting`.
+- **REST:** `Markets.GetCandlesticks` (batch), `Portfolio.GetTotalRestingOrderValue`, `Events.ListMultivariateCollections` / `GetMultivariateCollection` / `CreateMarketInMultivariateCollection`. Coverage is 64 of 96 spec paths. Mutating order-group and subaccount calls whose spec response is empty return `error` only.
+- **Types:** `Series`, `MarketCandlestick`, `BidAskDistribution`, `PriceDistribution`, `ForecastPercentilesPoint`, `OrderGroup`, `SubaccountBalance`, `SubaccountTransfer`, `SubaccountNettingConfig`, `MultivariateEventCollection`, `AssociatedEvent`, `TickerPair`; constants `FeeType*`, `CollectionStatus*`.
+- **Tests:** `internal/retry` and `internal/auth` (signature verified with `rsa.VerifyPSS`, query string excluded from the signed path, PKCS#1/PKCS#8 parsing) had none; both are covered now.
+
+### Removed
+
+- The 8.5 MB compiled `example` binary and the empty `cmd/example/key_id` / `cmd/example/private_key.pem` placeholders are no longer tracked; `/example`, `*.pem`, and `cmd/example/key_id` are gitignored. See `cmd/example/README.md` for where to put credentials.
+- Unused `internal/transport` and `internal/errors` packages, and the unused `BearerToken` / duplicate `StaticHeaders` from `internal/auth`. The public `oddrip.APIError` and `oddrip.StaticHeaders` are unchanged.
+- `gorilla/websocket` is no longer marked `// indirect` in `go.mod`.
+
 ## [0.5.0] — 2026-09-06
 
 ### Added

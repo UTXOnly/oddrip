@@ -16,3 +16,8 @@
 *.out
 
 .DS_Store
+
+# Example binary and local credentials
+/example
+*.pem
+cmd/example/key_id

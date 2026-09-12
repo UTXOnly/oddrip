@@ -103,9 +103,9 @@ type ApiUsageLevelGrant struct {
 
 type GetAccountApiLimitsResponse struct {
 	UsageTier string               `json:"usage_tier"`
-	Read       BucketLimit          `json:"read"`
-	Write      BucketLimit          `json:"write"`
-	Grants     []ApiUsageLevelGrant `json:"grants"`
+	Read      BucketLimit          `json:"read"`
+	Write     BucketLimit          `json:"write"`
+	Grants    []ApiUsageLevelGrant `json:"grants"`
 }
 
 type EndpointTokenCost struct {
@@ -255,4 +255,11 @@ type GetTargetBalanceAllocationResponse struct {
 type SetTargetBalanceAllocationRequest struct {
 	Allocations              []TargetBalanceAllocation `json:"allocations"`
 	RestingMarginReservation string                    `json:"resting_margin_reservation,omitempty"`
+}
+
+// GetPortfolioRestingOrderTotalValueResponse: TotalRestingOrderValue is in
+// cents; the breakdown balances are fixed-point dollar strings.
+type GetPortfolioRestingOrderTotalValueResponse struct {
+	TotalRestingOrderValue     int64            `json:"total_resting_order_value"`
+	RestingOrderValueBreakdown []IndexedBalance `json:"resting_order_value_breakdown"`
 }
