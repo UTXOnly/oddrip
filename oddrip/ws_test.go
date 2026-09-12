@@ -870,6 +870,7 @@ func TestWS_Subscribe_ConcurrentWithCancelled(t *testing.T) {
 // and Messages() closes, the same path as a slow consumer.
 func TestWS_WriteTimeout_FailsConnection(t *testing.T) {
 	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(200*time.Millisecond))
+	wsJamSocket(t, ws)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
@@ -916,6 +917,7 @@ func TestWS_WriteTimeout_FailsConnection(t *testing.T) {
 // leaves the socket unusable, so the connection is failed as well.
 func TestWS_WriteTimeout_CallerDeadline(t *testing.T) {
 	ws := wsTestConnect(t, wsNoReadServer(t))
+	wsJamSocket(t, ws)
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
 
@@ -942,6 +944,7 @@ func TestWS_WriteTimeout_CallerDeadline(t *testing.T) {
 // queueing behind the blocked write until it times out.
 func TestWS_Write_BlockedWriterDoesNotHoldOthers(t *testing.T) {
 	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(time.Second))
+	wsJamSocket(t, ws)
 
 	first := make(chan error, 1)
 	go func() {
@@ -976,6 +979,7 @@ func TestWS_Write_BlockedWriterDoesNotHoldOthers(t *testing.T) {
 // skips the close frame, closes the socket, and that write returns.
 func TestWS_Close_BoundedWithStuckWriter(t *testing.T) {
 	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(2*time.Second))
+	wsJamSocket(t, ws)
 
 	stuck := make(chan error, 1)
 	go func() {
@@ -1015,14 +1019,7 @@ func TestWS_Close_BoundedWithStuckWriter(t *testing.T) {
 // itself cannot be delivered; Close still returns within the write timeout.
 func TestWS_Close_BoundedWhenSocketFull(t *testing.T) {
 	ws := wsTestConnect(t, wsNoReadServer(t), WSWriteTimeout(200*time.Millisecond))
-	// Fill the socket underneath gorilla. The peer never reads, so it does
-	// not matter that these bytes are not WebSocket frames.
-	nc := ws.conn.NetConn()
-	nc.SetWriteDeadline(time.Now().Add(200 * time.Millisecond))
-	if _, err := nc.Write(make([]byte, wsJamSize)); err == nil {
-		t.Fatal("expected the raw write to block and time out")
-	}
-	nc.SetWriteDeadline(time.Time{})
+	wsJamSocket(t, ws)
 
 	start := time.Now()
 	err := ws.Close()
@@ -1049,15 +1046,40 @@ func TestWS_Close_BoundedWhenSocketFull(t *testing.T) {
 	}
 }
 
-// wsJamSize is larger than any default loopback send+receive buffer pair
-// (macOS autotunes each to at most 4MB), so writing it to a peer that never
-// reads blocks until the write deadline.
-const wsJamSize = 16 << 20
+// wsJamSocket fills the socket underneath gorilla: it writes raw bytes until
+// the kernel stops accepting them, so the next frame write blocks. Loopback
+// buffers vary by platform (Windows autotunes the receive window to 16MB), so
+// the fill runs until a write times out rather than to a fixed size. The peer
+// never reads, so it does not matter that these bytes are not frames.
+func wsJamSocket(t *testing.T, ws *WSConn) {
+	t.Helper()
+	nc := ws.conn.NetConn()
+	buf := make([]byte, 1<<20)
+	giveUp := time.Now().Add(10 * time.Second)
+	for {
+		nc.SetWriteDeadline(time.Now().Add(100 * time.Millisecond))
+		_, err := nc.Write(buf)
+		var ne net.Error
+		if errors.As(err, &ne) && ne.Timeout() {
+			break
+		}
+		if err != nil {
+			t.Fatalf("jam write: %v", err)
+		}
+		if time.Now().After(giveUp) {
+			t.Fatal("socket never filled")
+		}
+	}
+	nc.SetWriteDeadline(time.Time{})
+}
 
+// wsJamParams is a command large enough that it cannot slip into whatever
+// room the kernel frees after wsJamSocket, yet cheap to marshal — the payload
+// is built before the write, so its cost must not eat a caller's deadline.
 func wsJamParams() types.SubscribeParams {
 	return types.SubscribeParams{
 		Channels:      []string{types.WSChannelTicker},
-		MarketTickers: []string{strings.Repeat("x", wsJamSize)},
+		MarketTickers: []string{strings.Repeat("x", 1<<20)},
 	}
 }
 
