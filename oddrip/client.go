@@ -40,6 +40,9 @@ type Client struct {
 	Series      *SeriesService
 	OrderGroups *OrderGroupsService
 	Subaccounts *SubaccountsService
+
+	// Perps is the perpetual-futures (margin) API.
+	Perps *PerpsClient
 }
 
 type Option func(*Client)
@@ -99,6 +102,7 @@ func New(opts ...Option) *Client {
 	c.Series = &SeriesService{client: c}
 	c.OrderGroups = &OrderGroupsService{client: c}
 	c.Subaccounts = &SubaccountsService{client: c}
+	c.Perps = newPerpsClient(c)
 	return c
 }
 

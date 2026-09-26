@@ -3,9 +3,11 @@ package oddrip
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/UTXOnly/oddrip/oddrip/types"
@@ -535,5 +537,59 @@ func TestEvents_CreateMarketInMultivariateCollection(t *testing.T) {
 	}
 	if ct.req != nil {
 		t.Fatalf("request should not be sent: %v", ct.req.URL)
+	}
+}
+
+func TestPortfolio_CreateIntraExchangeTransfer(t *testing.T) {
+	client, ct := newCaptureClient(200, `{"transfer_id":"tr-1"}`)
+	got, err := client.Portfolio.CreateIntraExchangeTransfer(context.Background(), &types.IntraExchangeInstanceTransferRequest{
+		Source: types.ExchangeInstanceEventContract, Destination: types.ExchangeInstanceMargined, Amount: 1500000,
+		SourceExchangeShard: 1, DestinationExchangeShard: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ct.assertRequest(t, http.MethodPost, "/portfolio/intra_exchange_instance_transfer")
+	ct.assertQuery(t, map[string]string{})
+	ct.assertBody(t, `{"source":"event_contract","destination":"margined","amount":1500000,"source_exchange_shard":1,"destination_exchange_shard":2}`)
+	if got.TransferID != "tr-1" {
+		t.Fatalf("resp: %+v", got)
+	}
+
+	client, ct = newCaptureClient(200, `{"transfer_id":"tr-2"}`)
+	if _, err := client.Portfolio.CreateIntraExchangeTransfer(context.Background(), &types.IntraExchangeInstanceTransferRequest{
+		Source: types.ExchangeInstanceEventContract, Destination: types.ExchangeInstanceEventContract, Amount: 10000,
+		SourceSubaccount: 0, DestinationSubaccount: 3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	ct.assertBody(t, `{"source":"event_contract","destination":"event_contract","amount":10000,"destination_subaccount":3}`)
+
+	client, ct = newCaptureClient(200, `{}`)
+	if _, err := client.Portfolio.CreateIntraExchangeTransfer(context.Background(), nil); err == nil {
+		t.Fatal("expected error for nil request")
+	}
+	if ct.req != nil {
+		t.Fatalf("request should not be sent: %v", ct.req.URL)
+	}
+}
+
+// No deduplication key: a 5xx may mean the transfer was accepted, so only 429
+// is retried.
+func TestPortfolio_CreateIntraExchangeTransfer_RetryPolicy(t *testing.T) {
+	req := &types.IntraExchangeInstanceTransferRequest{Source: types.ExchangeInstanceEventContract, Destination: types.ExchangeInstanceMargined, Amount: 100}
+	for _, tc := range []struct {
+		status    int
+		wantCalls int32
+	}{{503, 1}, {429, 3}} {
+		client, calls := countingServer(t, tc.status)
+		_, err := client.Portfolio.CreateIntraExchangeTransfer(context.Background(), req)
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) || apiErr.StatusCode != tc.status {
+			t.Fatalf("status %d: err = %v", tc.status, err)
+		}
+		if got := atomic.LoadInt32(calls); got != tc.wantCalls {
+			t.Fatalf("status %d: attempts = %d, want %d", tc.status, got, tc.wantCalls)
+		}
 	}
 }
