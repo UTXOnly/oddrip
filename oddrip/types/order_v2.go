@@ -36,8 +36,8 @@ type CancelOrderV2Opts struct {
 	MarketTicker  string
 }
 
-// CancelAllOrdersOpts carries the query parameters for cancelling every resting
-// event-market order. With Subaccount nil, orders from any subaccount match.
+// CancelAllOrdersOpts carries the query parameters for Orders.CancelAll and
+// Perps.Orders.CancelAll. With Subaccount nil, orders from any subaccount match.
 type CancelAllOrdersOpts struct {
 	Subaccount *int
 }

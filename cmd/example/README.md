@@ -6,6 +6,8 @@ Demo (`https://demo-api.kalshi.co/trade-api/v2`) is the default and is incomplet
 
 Covers exchange, markets (list/get/orderbook/trades), events, orders (list/get/queue), portfolio (balance/fills/positions), and account limits. Does not call Series, OrderGroups, Subaccounts, LiveData, historical, or settlements.
 
+Perps (perpetual futures) have their own read-only example in [`perps_example/`](perps_example/).
+
 ## Credentials
 
 Create two files in this directory (gitignored via `cmd/example/key_id` and `*.pem`):

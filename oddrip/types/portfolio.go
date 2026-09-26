@@ -236,6 +236,26 @@ type GetIntraExchangeTransfersOpts struct {
 	Cursor string
 }
 
+// IntraExchangeInstanceTransferRequest moves Amount, in centicents (unlike the
+// dollar-string Amount on IntraExchangeInstanceTransfer), between exchange
+// instances or shards. Source and Destination are ExchangeInstance* values.
+// The shard and subaccount fields default to 0; the subaccount fields are
+// supported only for event_contract to event_contract transfers. When the two
+// shards match, Kalshi treats the request as a subaccount transfer.
+type IntraExchangeInstanceTransferRequest struct {
+	Source                   string `json:"source"`
+	Destination              string `json:"destination"`
+	Amount                   int64  `json:"amount"`
+	SourceExchangeShard      int    `json:"source_exchange_shard,omitempty"`
+	DestinationExchangeShard int    `json:"destination_exchange_shard,omitempty"`
+	SourceSubaccount         int    `json:"source_subaccount,omitempty"`
+	DestinationSubaccount    int    `json:"destination_subaccount,omitempty"`
+}
+
+type IntraExchangeInstanceTransferResponse struct {
+	TransferID string `json:"transfer_id"`
+}
+
 const (
 	RestingMarginReservationMax = "max"
 	RestingMarginReservationSum = "sum"

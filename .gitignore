@@ -19,6 +19,8 @@
 
 # Example binary and local credentials
 /example
+/perps_example
+perps_calls.log
 *.pem
 cmd/example/key_id
 

@@ -178,6 +178,23 @@ func (s *PortfolioService) GetIntraExchangeTransfer(ctx context.Context, transfe
 	return &out, nil
 }
 
+// CreateIntraExchangeTransfer moves funds between exchange instances or shards
+// of the same account, such as event_contract to margined. req.Amount is in
+// centicents. A 200 means Kalshi accepted the request; the transfer is
+// processed asynchronously, so check GetIntraExchangeTransfer with the returned
+// TransferID for its status. There is no deduplication key, so the call is
+// retried on 429 only.
+func (s *PortfolioService) CreateIntraExchangeTransfer(ctx context.Context, req *types.IntraExchangeInstanceTransferRequest) (*types.IntraExchangeInstanceTransferResponse, error) {
+	if req == nil {
+		return nil, errors.New("request required")
+	}
+	var out types.IntraExchangeInstanceTransferResponse
+	if err := s.client.post(ctx, joinPath("portfolio", "intra_exchange_instance_transfer"), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // GetTargetBalanceAllocation returns the caller's target balance allocation
 // across exchange indexes.
 func (s *PortfolioService) GetTargetBalanceAllocation(ctx context.Context) (*types.GetTargetBalanceAllocationResponse, error) {

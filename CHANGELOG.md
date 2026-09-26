@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The client tracks [Kals
 
 **Versioning.** The module follows semver. While it is at major version 0, a **minor** release may contain breaking changes; when it does, they are listed first under a `### Breaking` heading with migration notes, and CI refuses a release that has API-incompatible changes (per `gorelease`) without that section, or that has one on a patch bump. Patch releases never break. From v1.0.0 on, breaking changes require a major bump.
 
+## [0.7.0] — 2026-09-26
+
+Perpetual futures ("perps") support: every path in Kalshi's perps REST spec and the perps WebSocket. Also adds the event-contract intra-exchange transfer. No API-incompatible changes.
+
+### Added
+
+- **Perps REST: `Client.Perps`**, covering all 38 paths (50 operations) in Kalshi's perps OpenAPI. It has one service per area of the spec: `Exchange`, `Account`, `Markets`, `Orders`, `OrderGroups`, `Portfolio`, `Risk`, `Fees`, `Funding`, `ExitTriggers`, `FCM`.
+  - Perps share the client's base URL, signer, and retry policy. Kalshi's perps spec lists only the `external-api` hosts; demo is `https://external-api.demo.kalshi.co/trade-api/v2`.
+  - Types keep the spec's names (`MarginMarket`, `MarginOrder`, `CreateMarginOrderRequest`, `ExitTrigger`, ...). Where a name collided with an event-contract type that has a different shape, `Margin` is inserted: `MarginExchangeStatus`, `ApplyMarginSubaccountTransferRequest`, `MarginOrderGroupOpts`.
+  - Event-contract types that match the perps schema field for field are reused: `GetAccountApiLimitsResponse`, the order-group request/response types, `CreateSubaccountResponse`, `CancelAllOrdersOpts`, and the historical candlestick distributions.
+  - Retries follow the existing rules:
+    - `Perps.Orders.Create` is retried on 5xx and transport errors only when `ClientOrderID` is set.
+    - `Perps.Portfolio.TransferBetweenSubaccounts` is retried the same way when `ClientTransferID` is set.
+    - `Perps.FCM.CreateSubtrader` is always retried. The subtrader ID comes from your suffix, so a replay gets a 409 instead of creating a second one.
+    - `Amend`, `Decrease`, `OrderGroups.Create`, and `CreateSubaccount` are retried on 429 only.
+  - Some requests are rejected without being sent when a field the spec requires is missing: `Orders.Decrease` needs exactly one of `ReduceBy` / `ReduceTo`; `OrderGroups.Create` / `UpdateLimit` need a contracts limit; exit-trigger sets and updates need at least one leg; `Markets.GetTrades` and `Funding.GetRateEstimate` need a ticker; `Markets.GetCandlesticks` needs a period interval of 1, 60, or 1440; `Funding.GetHistory` needs both dates; `FCM.DeleteSubtraderRiskControls` needs a subtrader ID.
+- **Perps WebSocket: `Client.ConnectPerpsWS`**, which dials `wss://external-api-margin-ws.kalshi.com/trade-api/ws/v2/margin` and returns the usual `*WSConn`. Caller options such as `WSHost` override the default.
+  - Payload types are `MarginOrderbookSnapshotMsg`, `MarginOrderbookDeltaMsg`, `MarginTickerMsg` (with `MarginTickerFundingRate`), `MarginTradeMsg`, `MarginFillMsg`, `MarginUserOrderMsg`, and `MarginErrorMsg`, which adds the `market_tickers` list a perps error can carry. `order_group_updates` reuses `OrderGroupUpdatesMsg`.
+  - Channel names and message `type` strings are the event-contract ones, so the existing `WSChannel*` / `WSType*` constants apply.
+- **`Portfolio.CreateIntraExchangeTransfer`** (`POST /portfolio/intra_exchange_instance_transfer`) with `IntraExchangeInstanceTransferRequest` / `Response`, for moving funds between the event-contract and margin balances. It has no deduplication key, so it is retried on 429 only. Kalshi documents the event-contract ↔ margin transfer as unavailable until the perps production rollout. Event-contract coverage is now 65 of 96 OpenAPI paths.
+- **Shared perps types and constants:** `TickerPrice`, `MarginMarketStatus*`, `OrderSource*`, `OrderReason*`, `MarginLastUpdateReason*`, `ExitTrigger{Kind,Status,Leg,Reason}*`, `MarginFeeSchedule*`, `MarginAssetClass*`.
+- Vendored `perps_openapi.yaml` (0.0.1) and `perps_asyncapi.yaml` (2.0.0), unmodified from [docs.kalshi.com](https://docs.kalshi.com/margin).
+- `cmd/example/perps_example`: read-only perps REST and WebSocket calls.
+- **Tests:**
+  - Every perps method: HTTP method, path, query (set and nil opts), and request body.
+  - `ErrEmptyPathParam` for every path parameter, and validation of required opts.
+  - Retry policy for each write whose policy depends on the request.
+  - JSON decoding of every perps request and response type, built from the spec's schemas since it has few examples.
+  - Perps WebSocket: the default dial URL, options overriding it, and `Subscribe` and `get_snapshot` against a mock server.
+  - Decoding of every perps message.
+
 ## [0.6.2] — 2026-09-12
 
 Default hosts move to Kalshi's recommended `external-api` endpoints; WebSocket writes and `Close` are bounded; `DoConcurrent` no longer spawns a goroutine per index; long error bodies decode; the repository has a license. No API-incompatible changes.

@@ -286,8 +286,9 @@ func (ws *WSConn) readLoop() {
 				}
 			}
 		}
-		// get_snapshot is answered with orderbook_snapshot frames that carry no
-		// command id, so its waiter is keyed by sid instead.
+		// get_snapshot is answered with orderbook_snapshot frames that do not
+		// always carry the command id (the perps socket may), so its waiter is
+		// also keyed by sid.
 		if env.Type == types.WSTypeOrderbookSnapshot && env.SID != 0 {
 			ws.pendMu.Lock()
 			waiters := ws.snapshots[env.SID]
@@ -565,7 +566,7 @@ func (ws *WSConn) ListSubscriptions(ctx context.Context) (*types.ListSubscriptio
 //     "cfbenchmarks_value_indexlist" / "cfbenchmarks_value_5hz_indexlist";
 //     Msg.UnderlyingTickers or Msg.IndexIDs holds the list.
 //   - get_snapshot: the server answers with orderbook_snapshot frames on
-//     Messages(), which carry no command id. The call returns once the first
+//     Messages(), which may carry no command id. The call returns once the first
 //     snapshot for the subscription (or an id-matched ok/error) arrives, with
 //     Type "orderbook_snapshot" and the frame's SID/Seq; the snapshots
 //     themselves are read from Messages().

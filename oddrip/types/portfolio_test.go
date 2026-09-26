@@ -221,3 +221,38 @@ func TestSetTargetBalanceAllocationRequest_Marshal(t *testing.T) {
 		t.Fatalf("empty marshal: %s", empty)
 	}
 }
+
+func TestIntraExchangeInstanceTransferRequest_Marshal(t *testing.T) {
+	req := IntraExchangeInstanceTransferRequest{
+		Source: ExchangeInstanceEventContract, Destination: ExchangeInstanceMargined, Amount: 250000,
+		SourceExchangeShard: 1, DestinationExchangeShard: 2, SourceSubaccount: 4, DestinationSubaccount: 5,
+	}
+	data, err := json.Marshal(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"source":"event_contract","destination":"margined","amount":250000,"source_exchange_shard":1,"destination_exchange_shard":2,"source_subaccount":4,"destination_subaccount":5}`
+	if string(data) != want {
+		t.Fatalf("marshal: %s", data)
+	}
+
+	// The shard and subaccount fields default to 0 server-side, so zero values
+	// are omitted; the required fields are always sent.
+	minimal, err := json.Marshal(IntraExchangeInstanceTransferRequest{Source: ExchangeInstanceMargined, Destination: ExchangeInstanceEventContract})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(minimal) != `{"source":"margined","destination":"event_contract","amount":0}` {
+		t.Fatalf("minimal marshal: %s", minimal)
+	}
+}
+
+func TestIntraExchangeInstanceTransferResponse_Unmarshal(t *testing.T) {
+	var out IntraExchangeInstanceTransferResponse
+	if err := json.Unmarshal([]byte(`{"transfer_id":"b6f1c2d4-0a1e-4c55-9d3b-7a2f8e9c1d00"}`), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out.TransferID != "b6f1c2d4-0a1e-4c55-9d3b-7a2f8e9c1d00" {
+		t.Fatalf("transfer_id: %q", out.TransferID)
+	}
+}
